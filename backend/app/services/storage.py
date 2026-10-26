@@ -11,12 +11,12 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from backend.app.models import Base
-from backend.app.config import PostgreSQLSettings
+from backend.app.config import PostgreSQLSettings,settings
 
 import boto3
 from botocore.client import Config as BotoConfig
 
-from backend.app.config import settings
+
 
 logger = logging.getLogger(__name__)
 
