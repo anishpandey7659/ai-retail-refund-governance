@@ -1,0 +1,234 @@
+[
+  {
+    "name": "Monitor",
+    "description": "24-inch Full HD LED monitor with HDMI and VGA ports, slim bezel and 75Hz refresh rate.",
+    "category": "electronics",
+    "price": "129.99",
+    "stock": 40,
+    "image": "RG-001"
+  },
+  {
+    "name": "Headphone",
+    "description": "Over-ear wireless Bluetooth headphones with deep bass, noise isolation and up to 30 hours of battery life.",
+    "category": "electronics",
+    "price": "49.99",
+    "stock": 80,
+    "image": "RG-002"
+  },
+  {
+    "name": "Mechanical keyboard",
+    "description": "Full-size mechanical keyboard with tactile blue switches, RGB backlight and durable keycaps.",
+    "category": "electronics",
+    "price": "59.99",
+    "stock": 60,
+    "image": "RG-003"
+  },
+  {
+    "name": "Wireless Mouse",
+    "description": "Ergonomic 2.4GHz wireless mouse.",
+    "category": "electronics",
+    "price": "19.99",
+    "stock": 150,
+    "image": "RG-004"
+  },
+  {
+    "name": "Switch",
+    "description": "8-port gigabit network switch with plug-and-play setup and compact metal casing.",
+    "category": "electronics",
+    "price": "24.99",
+    "stock": 70,
+    "image": "RG-005"
+  },
+  {
+    "name": "Table lamp",
+    "description": "Adjustable LED table lamp with touch dimmer and three color temperature modes.",
+    "category": "home-decor",
+    "price": "22.99",
+    "stock": 90,
+    "image": "RG-006"
+  },
+  {
+    "name": "Speaker",
+    "description": "Portable Bluetooth speaker with clear sound, built-in microphone and 12-hour playtime.",
+    "category": "electronics",
+    "price": "34.99",
+    "stock": 100,
+    "image": "RG-007"
+  },
+  {
+    "name": "Compact quick Charger",
+    "description": "20W compact fast charger with USB-C port, suitable for phones and tablets.",
+    "category": "electronics",
+    "price": "17.99",
+    "stock": 200,
+    "image": "RG-08"
+  },
+  {
+    "name": "Clay cup",
+    "description": "Handmade natural clay cup for tea or coffee, keeps drinks naturally cool or warm.",
+    "category": "home-kitchen",
+    "price": "6.99",
+    "stock": 180,
+    "image": "RG-009"
+  },
+  {
+    "name": "Electric Kelti",
+    "description": "1.8L stainless steel electric kettle with auto shut-off and boil-dry protection.",
+    "category": "home-kitchen",
+    "price": "29.99",
+    "stock": 75,
+    "image": "RG-010"
+  },
+  {
+    "name": "Fry pan",
+    "description": "26cm non-stick fry pan with heat-resistant handle, suitable for all stovetops.",
+    "category": "home-kitchen",
+    "price": "21.99",
+    "stock": 90,
+    "image": "RG-011"
+  },
+  {
+    "name": "Knife",
+    "description": "Sharp stainless steel kitchen knife with ergonomic non-slip handle.",
+    "category": "home-kitchen",
+    "price": "12.99",
+    "stock": 120,
+    "image": "RG-012"
+  },
+  {
+    "name": "Bed sheet",
+    "description": "Soft breathable cotton double bed sheet set with two pillow covers.",
+    "category": "home-textiles",
+    "price": "24.99",
+    "stock": 100,
+    "image": "RG-013"
+  },
+  {
+    "name": "Wooden knife placer",
+    "description": "Natural wooden knife block with slots for multiple knives, keeps blades safe and organized.",
+    "category": "home-kitchen",
+    "price": "18.99",
+    "stock": 60,
+    "image": "RG-014"
+  },
+  {
+    "name": "pull-out bin",
+    "description": "Under-sink pull-out storage bin with sliding rails, ideal for kitchen waste or organizing.",
+    "category": "home-kitchen",
+    "price": "39.99",
+    "stock": 45,
+    "image": "RG-015"
+  },
+  {
+    "name": "Double Action / Reversible” spiritual candle",
+    "description": "Hand-poured two-layer spiritual candle for rituals and meditation, burns evenly.",
+    "category": "home-decor",
+    "price": "9.99",
+    "stock": 130,
+    "image": "RG-016"
+  },
+  {
+    "name": "Black shirt",
+    "description": "Classic black cotton shirt with a comfortable regular fit.",
+    "category": "clothing",
+    "price": "22.99",
+    "stock": 110,
+    "image": "RG-017"
+  },
+  {
+    "name": "Winter jacket",
+    "description": "Warm padded winter jacket with water-resistant shell, zipper pockets and fleece lining.",
+    "category": "clothing",
+    "price": "69.99",
+    "stock": 50,
+    "image": "RG-018"
+  },
+  {
+    "name": "Plain t-shirt",
+    "description": "Soft 100% cotton round-neck plain t-shirt for everyday wear.",
+    "category": "clothing",
+    "price": "12.99",
+    "stock": 200,
+    "image": "RG-019"
+  },
+  {
+    "name": "White Pant",
+    "description": "Comfortable slim-fit white pants made from lightweight stretch fabric.",
+    "category": "clothing",
+    "price": "29.99",
+    "stock": 90,
+    "image": "RG-020"
+  },
+  {
+    "name": "Winter cap",
+    "description": "Warm knitted winter cap with soft inner lining, one size fits most.",
+    "category": "accessories",
+    "price": "9.99",
+    "stock": 140,
+    "image": "RG-021"
+  },
+  {
+    "name": "Belt",
+    "description": "Durable faux leather belt with metal buckle and adjustable fit.",
+    "category": "accessories",
+    "price": "14.99",
+    "stock": 120,
+    "image": "RG-022"
+  },
+  {
+    "name": "white shoe",
+    "description": "Casual white sneakers with cushioned insole and non-slip rubber sole.",
+    "category": "footwear",
+    "price": "44.99",
+    "stock": 70,
+    "image": "RG-023"
+  },
+  {
+    "name": "hiking stick",
+    "description": "Lightweight adjustable aluminum hiking stick with anti-slip grip and rubber tip.",
+    "category": "sports-outdoors",
+    "price": "19.99",
+    "stock": 80,
+    "image": "RG-024"
+  },
+  {
+    "name": "Blue bottle",
+    "description": "750ml leak-proof BPA-free water bottle in blue, great for gym and travel.",
+    "category": "sports-outdoors",
+    "price": "11.99",
+    "stock": 160,
+    "image": "RG-025"
+  },
+  {
+    "name": "Dumb bell",
+    "description": "5kg rubber-coated hex dumbbell with anti-roll design for home workouts.",
+    "category": "sports-outdoors",
+    "price": "24.99",
+    "stock": 60,
+    "image": "RG-026"
+  },
+  {
+    "name": "Water Tap",
+    "description": "Chrome-finished brass water tap with smooth quarter-turn handle and leak-free design.",
+    "category": "home-hardware",
+    "price": "15.99",
+    "stock": 85,
+    "image": "RG-027"
+  },
+  {
+    "name": "Small Packet light",
+    "description": "Pocket-sized rechargeable LED light, ultra-bright and ideal for travel or emergencies.",
+    "category": "electronics",
+    "price": "8.99",
+    "stock": 150,
+    "image": "RG-028"
+  },
+  {
+    "name": "Carpet",
+    "description": "Soft non-slip living room carpet, 120x180cm, easy to clean and durable.",
+    "category": "home-decor",
+    "price": "49.99",
+    "stock": 35,
+    "image": "RG-029"
+  }
+]
