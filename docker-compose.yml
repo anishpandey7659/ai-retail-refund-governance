@@ -1,0 +1,101 @@
+x-env: &env
+  env_file: [.env]
+
+services:
+  # ----------------------------------------------------------------- datastores
+  postgres:
+    image: postgres:18
+    <<: *env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: ["5432:5432"]
+    networks: [rg]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes: [minio_data:/data]
+    ports: ["9000:9000", "9001:9001"]
+    networks: [rg]
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client:latest-dev
+    depends_on: [minio]
+    networks: [rg]
+    <<: *env
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do sleep 2; done &&
+      mc mb -p local/returnguard &&
+      mc mb -p local/langfuse &&
+      mc mb -p local/returnguard-langfuse-events &&
+      echo 'buckets ready'
+      "
+
+  # ----------------------------------------------------------------- identity
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.2
+    command: start-dev --import-realm --health-enabled=true --http-port=8080
+    <<: *env
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/returnguard?currentSchema=keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HOSTNAME: http://localhost:8081
+      KC_HTTP_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx512m"
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports: ["8081:8080", "9002:9000"]
+    networks: [rg]
+
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes: [redis_data:/data]
+    ports: ["6380:6379"]
+    networks: [rg]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports: ["1025:1025", "8025:8025"]
+    networks: [rg]
+
+
+volumes:
+  pg_data:
+  minio_data:
+  redis_data:
+
+networks:
+  rg:
+    driver: bridge
