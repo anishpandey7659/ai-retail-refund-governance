@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     minio_bucket_name: str =""
     minio_secure: bool = False
 
+    # Keycloak for autho
+    keycloak_issuer: str
+    keycloak_jwks_url: str
+    keycloak_internal_url: str
+    # keycloak_audience: str
+    keycloak_client_id: str
+    keycloak_client_secret: str | None = None
+
+    # Redis    
+    redis_url: str =""
+
 
 @lru_cache
 def get_settings() -> Settings:
