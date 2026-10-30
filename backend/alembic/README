@@ -1,0 +1,17 @@
+Generic single-database configuration.
+
+
+Your everyday workflow
+1. Modify SQLAlchemy models
+   
+   Add, remove, or modify columns, relationships, indexes, constraints, etc.
+2. Generate migration
+   uv run alembic -c backend/alembic.ini revision --autogenerate -m "describe_change"
+3. Review migration
+   
+   Check generated SQL operations and data implications.
+4. Apply migration
+   uv run alembic -c backend/alembic.ini upgrade head
+5. Continue development
+   
+   Your PostgreSQL schema is now updated.
