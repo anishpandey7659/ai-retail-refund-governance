@@ -35,7 +35,7 @@ class User(Base,TS):
 
     id: Mapped[uuid.UUID] = PK()
     keycloak_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    name:Mapped[str]=mapped_column(String(64),unique=True) 
+    name:Mapped[str]=mapped_column(String(64)) 
     email:Mapped[str]=mapped_column(String(320),unique=True)
     role: Mapped[str] = mapped_column(String(20), default="customer")  # customer|reviewer|admin
     __table_args__ = (CheckConstraint("role in ('customer','reviewer','admin')", name="ck_user_role"),)
@@ -130,15 +130,19 @@ class Return(Base, TS):
     __tablename__ = "returns"
 
     id: Mapped[uuid.UUID] = PK()
-    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
 
-    reason: Mapped[str] = mapped_column(String(64))
-    customer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    order_item_id: Mapped[int] = mapped_column(ForeignKey("order_items.id"),index=True,)
+
+    reason_text: Mapped[str] = mapped_column(String(64))
+    reason_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_attempts: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
+
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
 
     status: Mapped[ReturnStatus] = mapped_column(
-        Enum(ReturnStatus, name="return_status"),
+        Enum(ReturnStatus, name="return_status"),   
         default=ReturnStatus.PENDING,
         index=True,
     )
@@ -158,38 +162,38 @@ class Return(Base, TS):
     photos: Mapped[list["ReturnPhoto"]] = relationship(
         back_populates="return_", cascade="all, delete-orphan"
     )
+    __table_args__ = (
+        CheckConstraint(
+            "reason_code IN ('damaged', 'not_as_described', "
+            "'wrong_item', 'no_longer_needed', 'defective', "
+            "'arrived_late', 'quality')",
+            name="ck_returns_reason_code",
+        ),
+    )
     
     def __repr__(self) -> str:
         return (
-            f"<Return id={self.id} order_id={self.order_id} "
+            f"<Return id={self.id} order_id={self.order_id} item_id={self.order_item_id}"
             f"status={self.status.value} amount={self.amount}>"
         )
 
 
-class ReturnPhoto(Base,):
+class ReturnPhoto(Base, TS):
     __tablename__ = "return_photos"
-
     id: Mapped[uuid.UUID] = PK()
-    return_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("returns.id"), index=True)
-
-    file_key: Mapped[str] = mapped_column(String(300))  # MinIO object key
-    file_size: Mapped[int] = mapped_column(BigInteger)  # bytes
-    mime_type: Mapped[str] = mapped_column(String(100))
-    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
-    uploaded_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    return_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("returns.id", ondelete="CASCADE"), index=True)
+    object_key: Mapped[str] = mapped_column(String(300))
+    content_type: Mapped[str] = mapped_column(String(60))
+    bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    return_: Mapped["Return"] = relationship(
+        back_populates="photos"
     )
-
-    return_: Mapped["Return"] = relationship(back_populates="photos")
 
     def __repr__(self) -> str:
         return (
             f"<ReturnPhoto id={self.id} return_id={self.return_id} "
-            f"is_primary={self.is_primary}>"
         )
-
 
 # ------------------------- Rule & dials (The policy) -----------------------------------------------
 
@@ -452,6 +456,11 @@ class AppealStatus(str, enum.Enum):
 
 
 class Appeal(Base, TS):
+    """
+    When a return is denied, the customer can appeal, 
+    Stores their reason, who originally denied it, and the (different) reviewer it's handed to for a fresh look.
+    """
+
     __tablename__ = "appeals"
     __table_args__ = (
         CheckConstraint(
@@ -492,6 +501,11 @@ class InfoRequestStatus(str, enum.Enum):
 
 
 class InfoRequest(Base, TS):
+    """
+    When a reviewer needs more information from the customer (eg: "send the photo of the serial number "),
+    all these detail are stored here
+    """
+
     __tablename__ = "info_requests"
 
     id: Mapped[uuid.UUID] = PK()
@@ -500,13 +514,15 @@ class InfoRequest(Base, TS):
     requested_from: Mapped[InfoRequestTarget] = mapped_column(
         Enum(InfoRequestTarget, name="info_request_target")
     )
-    message: Mapped[str] = mapped_column(Text)
+    question: Mapped[str] = mapped_column(Text)
+
     status: Mapped[InfoRequestStatus] = mapped_column(
         Enum(InfoRequestStatus, name="info_request_status"),
         default=InfoRequestStatus.PENDING,
         index=True,
     )
-    response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return (
