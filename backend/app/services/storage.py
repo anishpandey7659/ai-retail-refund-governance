@@ -171,7 +171,10 @@ class PostgreSQLDatabase():
             await session.close()
 
 
-def get_postgresql_db()->PostgreSQLDatabase:
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def get_postgresql_db() -> PostgreSQLDatabase:
     return PostgreSQLDatabase(config=PostgreSQLSettings())
 
 
