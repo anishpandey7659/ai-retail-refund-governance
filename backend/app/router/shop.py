@@ -16,7 +16,7 @@ from backend.app.models import Product
 from backend.app.services.storage import delete_object, put_bytes
 
 
-router = APIRouter(prefix="/products", tags=["products"])
+shop_router = APIRouter(prefix="/products", tags=["products"])
 
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg": ".jpg",
@@ -26,7 +26,7 @@ ALLOWED_IMAGE_TYPES = {
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
-@router.post("", response_model=ProductOut, status_code=201)
+@shop_router.post("", response_model=ProductOut, status_code=201)
 async def create_product(
     name: Annotated[str, Form(min_length=1, max_length=64)],
     description: Annotated[str, Form(min_length=1)],
@@ -82,7 +82,7 @@ async def create_product(
     return to_out(product)
 
 
-@router.get("", response_model=list[ProductOut])
+@shop_router.get("", response_model=list[ProductOut])
 async def list_products(
     category: str | None = None,
     limit: int = 20,
@@ -96,7 +96,7 @@ async def list_products(
     return [to_out(p) for p in result.all()]
 
 
-@router.get("/{product_id}", response_model=ProductOut)
+@shop_router.get("/{product_id}", response_model=ProductOut)
 async def get_product(
     product_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session),
