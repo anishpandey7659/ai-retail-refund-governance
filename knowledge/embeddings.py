@@ -1,6 +1,6 @@
 import os
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from langchain_core.documents import Document
 
 
@@ -8,7 +8,7 @@ class EmbeddingService:
     """Generate embeddings using OpenAI."""
 
     def __init__(self):
-        self.client = OpenAI()
+        self.client = AsyncOpenAI()
 
         self.model = os.getenv(
             "OPENAI_EMBEDDING_MODEL",
@@ -17,17 +17,17 @@ class EmbeddingService:
 
         self.batch_size = 100
 
-    def embed_text(self, text: str) -> list[float]:
+    async def embed_text(self, text: str) -> list[float]:
         """Generate an embedding for a single text."""
 
-        response = self.client.embeddings.create(
+        response = await self.client.embeddings.create(
             model=self.model,
             input=text,
         )
 
         return response.data[0].embedding
 
-    def embed_documents(
+    async def embed_documents(
         self,
         documents: list[Document],
     ) -> list[list[float]]:
@@ -44,7 +44,7 @@ class EmbeddingService:
         for start in range(0, len(texts), self.batch_size):
             batch = texts[start : start + self.batch_size]
 
-            response = self.client.embeddings.create(
+            response = await self.client.embeddings.create(
                 model=self.model,
                 input=batch,
             )
