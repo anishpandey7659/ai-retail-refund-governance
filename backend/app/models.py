@@ -169,6 +169,10 @@ class Return(Base, TS):
             "'arrived_late', 'quality')",
             name="ck_returns_reason_code",
         ),
+        CheckConstraint(
+        "final_decision IS NULL OR final_decision IN ('approve', 'deny', 'in_review')",
+        name="ck_returns_final_decision",
+    ),
     )
     
     def __repr__(self) -> str:
