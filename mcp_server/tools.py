@@ -1,25 +1,24 @@
 from knowledge.ingestion import PolicyKnowledgeBase
-from fastmcp import FastMCP
-
-import os
 from typing import Any, LiteralString
+from psycopg.rows import dict_row
+from fastmcp import FastMCP
+import os
 
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 
-_pool = ConnectionPool(
+_pool = AsyncConnectionPool(
     conninfo=os.environ["DATABASE_SYNC_URL"].replace("postgresql+psycopg://", "postgresql://"),
     min_size=1,
     max_size=4,
-    open=True,
+    open=False, # Don't open connections until first use
 )
 
-def _rows(sql: LiteralString, params: dict) -> list[dict[str, Any]]:
-    with _pool.connection() as conn:
-        cur = conn.execute(sql, params)
-        if cur.description is None:
-            return []
-        cols = [c.name for c in cur.description]
-        return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+async def _rows(sql: LiteralString, params: dict):
+    async with _pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(sql, params)
+            return await cur.fetchall()
+
 
 
 def register_tools(mcp: FastMCP):
@@ -42,49 +41,62 @@ def register_tools(mcp: FastMCP):
         )
 
     @mcp.tool
-    def get_order(order_id: str) -> dict[str, Any]:
+    async def get_order(order_id: str) -> dict[str, Any]:
         """Return the order header + line items for an order id."""
 
-        orders = _rows(
+        orders = await _rows(
             "SELECT id::text, user_id::text, status, total_amount, card_last4, placed_at "
             "FROM orders WHERE id = %(oid)s",
             {"oid": order_id},
         )
         if not orders:
             return {"found": False, "order_id": order_id}
-        items = _rows(
+        items = await _rows(
             "SELECT product_id::text, name_at_purchase, price_at_purchase, quantity "
             "FROM order_items WHERE order_id = %(oid)s",
             {"oid": order_id},
         )
         o = orders[0]
         o["total_amount"] = float(o["total_amount"])
-        o["placed_at"] = o["placed_at"].isoformat()
+        
+        if o["placed_at"] is not None:
+            o["placed_at"] = o["placed_at"].isoformat()
+
         for it in items:
             it["price_at_purchase"] = float(it["price_at_purchase"])
         return {"found": True, "order": o, "items": items}
 
 
     @mcp.tool
-    def get_customer_history(user_id: str) -> dict[str, Any]:
-        """Order/return counts + prior denied returns + return rate for a customer."""
-        h = _rows(
+    async def get_customer_history(user_id: str) -> dict[str, Any]:
+        """Order/return counts + prior denied returns + return rate."""
+
+        rows = await _rows(
             """
             SELECT
-            (SELECT count(*) FROM orders  WHERE user_id = %(u)s) AS orders,
-            (SELECT count(*) FROM returns WHERE user_id = %(u)s) AS returns,
-            (SELECT count(*) FROM returns WHERE user_id = %(u)s AND final_decision='deny') AS denied,
-            (SELECT count(*) FROM returns WHERE user_id = %(u)s AND final_decision='approve') AS approved
+                (SELECT count(*) FROM orders WHERE user_id = %(u)s) AS orders,
+                (SELECT count(*) FROM returns WHERE user_id = %(u)s) AS returns,
+                (SELECT count(*) FROM returns
+                WHERE user_id = %(u)s AND final_decision = 'deny') AS denied,
+                (SELECT count(*) FROM returns
+                WHERE user_id = %(u)s AND final_decision = 'approve') AS approved
             """,
             {"u": user_id},
-        )[0]
-        orders = max(int(h["orders"]), 1)
+        )
+
+        h = rows[0]
+        lifetime_orders = int(h["orders"])
+        lifetime_returns = int(h["returns"])
+
         return {
             "user_id": user_id,
-            "lifetime_orders": int(h["orders"]),
-            "lifetime_returns": int(h["returns"]),
+            "lifetime_orders": lifetime_orders,
+            "lifetime_returns": lifetime_returns,
             "denied_returns": int(h["denied"]),
             "approved_returns": int(h["approved"]),
-            "return_rate": round(int(h["returns"]) / orders, 3),
+            "return_rate": (
+                round(lifetime_returns / lifetime_orders, 3)
+                if lifetime_orders > 0
+                else 0.0
+            ),
         }
-
