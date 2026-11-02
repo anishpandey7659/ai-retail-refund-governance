@@ -7,7 +7,7 @@ import os
 from psycopg_pool import AsyncConnectionPool
 
 _pool = AsyncConnectionPool(
-    conninfo=os.environ["DATABASE_SYNC_URL"].replace("postgresql+psycopg://", "postgresql://"),
+    conninfo=os.environ["DATABASE_PSYCOPG_URL"],
     min_size=1,
     max_size=4,
     open=False, # Don't open connections until first use
