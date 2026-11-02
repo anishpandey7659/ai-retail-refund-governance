@@ -45,7 +45,22 @@ def _out(r: Return, photo_urls: list[str]) -> ReturnOut:
 
 
 @return_router.post("", response_model=ReturnCreateOut, status_code=201,
-                    description="""API for Return Order Item product""")
+                    description="""
+ Submit a return request for an order item.
+
+    **Form Fields:**
+    - `order_item_id` (int, required): ID of the order item to return.
+    - `reason_code` (str, required): Reason for the return. Supported values:
+        - `damaged`
+        - `not_as_described`
+        - `wrong_item`
+        - `no_longer_needed`
+        - `defective`
+        - `arrived_late`
+        - `quality`
+    - `reason_text` (str, optional): Additional details explaining the return.
+    - `photo` (file, required): Supporting photo evidence for the return.
+""")
 @limiter.limit("60/minute")
 async def submit_return(
     request: Request,

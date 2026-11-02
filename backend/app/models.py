@@ -135,7 +135,7 @@ class Return(Base, TS):
 
     order_item_id: Mapped[int] = mapped_column(ForeignKey("order_items.id"),index=True,)
 
-    reason_text: Mapped[str] = mapped_column(String(64))
+    reason_text: Mapped[str] = mapped_column(Text, nullable=False)
     reason_code: Mapped[str] = mapped_column(String(32), nullable=False)
     review_attempts: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
 
