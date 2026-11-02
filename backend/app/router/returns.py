@@ -37,6 +37,7 @@ async def _photo_urls(session: AsyncSession, return_id) -> list[str]:
 def _out(r: Return, photo_urls: list[str]) -> ReturnOut:
     return ReturnOut(
         id=str(r.id), order_id=str(r.order_id), order_item_id=str(r.order_item_id),
+        reason_code =r.reason_code,
         reason_text=r.reason_text, status=r.status,
         amount=r.amount, ai_proposed_decision=r.ai_proposed_decision,
         final_decision=r.final_decision,

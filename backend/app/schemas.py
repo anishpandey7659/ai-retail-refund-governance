@@ -67,6 +67,7 @@ class ReturnOut(BaseModel):
     id: str
     order_id: str
     order_item_id: str
+    reason_code: str
     reason_text: str
     status: str
     amount: Decimal
