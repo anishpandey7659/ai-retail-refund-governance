@@ -1,3 +1,5 @@
+import uuid
+
 from knowledge.ingestion import PolicyKnowledgeBase
 from typing import Any, LiteralString
 from psycopg.rows import dict_row
@@ -41,30 +43,89 @@ def register_tools(mcp: FastMCP):
         )
 
     @mcp.tool
-    async def get_order(order_id: str) -> dict[str, Any]:
-        """Return the order header + line items for an order id."""
+    async def get_return_context(return_id: uuid.UUID) -> dict[str, Any]:
+        """Return complete context for a return, including order item and product details."""
 
-        orders = await _rows(
-            "SELECT id::text, user_id::text, status, total_amount, card_last4, placed_at "
-            "FROM orders WHERE id = %(oid)s",
-            {"oid": order_id},
-        )
-        if not orders:
-            return {"found": False, "order_id": order_id}
-        items = await _rows(
-            "SELECT product_id::text, name_at_purchase, price_at_purchase, quantity "
-            "FROM order_items WHERE order_id = %(oid)s",
-            {"oid": order_id},
-        )
-        o = orders[0]
-        o["total_amount"] = float(o["total_amount"])
-        
-        if o["placed_at"] is not None:
-            o["placed_at"] = o["placed_at"].isoformat()
+        rows = await _rows(
+            """
+        SELECT
+        r.id::text AS return_id,
+        r.order_id,
+        r.user_id::text AS customer_id,
 
-        for it in items:
-            it["price_at_purchase"] = float(it["price_at_purchase"])
-        return {"found": True, "order": o, "items": items}
+        COALESCE(
+            (
+                SELECT JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'id', rp.id::text,
+                        'object_key', rp.object_key,
+                        'content_type', rp.content_type,
+                        'bytes', rp.bytes
+                    )
+                )
+                FROM return_photos rp
+                WHERE rp.return_id = r.id
+            ),
+            '[]'::json
+        ) AS photos,
+
+        r.created_at,
+        r.reason_code,
+        r.reason_text,
+        r.amount,
+        r.status,
+
+        oi.id::text AS order_item_id,
+        oi.product_id::text AS product_id,
+        oi.quantity,
+        oi.price_at_purchase,
+        oi.name_at_purchase,
+
+        p.name AS product_name,
+        p.description AS product_description,
+        p.category AS product_category,
+        p.price AS current_product_price,
+        p.image_key AS product_image_key
+
+    FROM returns r
+
+    JOIN order_items oi
+        ON oi.id = r.order_item_id
+        AND oi.order_id = r.order_id
+
+    JOIN products p
+        ON p.id = oi.product_id
+
+    WHERE r.id = %(return_id)s
+    """,
+            {"return_id": return_id},
+        )
+
+        if not rows:
+            return {
+                "found": False,
+                "return_id": return_id,
+            }
+
+        context = rows[0]
+
+        # Convert Decimal values to JSON-compatible floats.
+        for field in (
+            "amount",
+            "price_at_purchase",
+            "current_product_price",
+        ):
+            if context[field] is not None:
+                context[field] = float(context[field])
+
+        # Convert datetime to ISO 8601.
+        if context["created_at"] is not None:
+            context["created_at"] = context["created_at"].isoformat()
+
+        return {
+            "found": True,
+            "return": context,
+        }
 
 
     @mcp.tool
