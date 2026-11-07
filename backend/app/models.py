@@ -76,9 +76,6 @@ class Order(Base,TS):
     shipping_address: Mapped[str] = mapped_column(Text)
     card_last4: Mapped[str] = mapped_column(String(4))
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
-    placed_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
     delivered_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -140,13 +137,6 @@ class Return(Base, TS):
     review_attempts: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
 
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
-
-    requested_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    returned_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
 
     status: Mapped[ReturnStatus] = mapped_column(
         Enum(ReturnStatus, name="return_status"),   
