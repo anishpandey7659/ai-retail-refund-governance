@@ -79,6 +79,16 @@ class PostgreSQLDatabase():
             safe_target = url.split("@")[1] if "@" in url else "localhost"
             logger.info(f"Attempting to connect to PostgreSQL at: {safe_target}")
 
+            parsed_url = make_url(url)
+            logger.info(
+            "Actual DB connection target: host=%s port=%s database=%s driver=%s ssl=%s",
+            parsed_url.host,
+            parsed_url.port,
+            parsed_url.database,
+            parsed_url.drivername,
+            connect_args.get("ssl", False),
+        )
+
             self.engine = create_async_engine(
                 url,
                 echo=self.config.echo_sql,
