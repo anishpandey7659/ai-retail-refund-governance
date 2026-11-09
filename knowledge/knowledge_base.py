@@ -8,8 +8,8 @@ from uuid import uuid5, NAMESPACE_URL
 from dotenv import load_dotenv
 from fastembed import SparseTextEmbedding
 from qdrant_client import AsyncQdrantClient, models
-
-from .chunker import split_by_headings
+from langchain_core.documents import Document
+from .chunker import split_policy
 from .embeddings import EmbeddingService
 
 
@@ -175,7 +175,7 @@ class PolicyKnowledgeBase:
         logger.info("Starting policy ingestion: %s", path.name)
 
         # 1. Split policy into LangChain Documents.
-        documents = split_by_headings(str(path))
+        documents = split_policy(str(path))
 
         if not documents:
             raise ValueError("No policy sections were generated.")
@@ -310,7 +310,14 @@ class PolicyKnowledgeBase:
                 "document_id": (point.payload or {}).get("document_id"),
                 "policy_version": (point.payload or {}).get("policy_version"),
                 "section": (point.payload or {}).get("section"),
+                "section_no": (point.payload or {}).get("section_no"),
+                "subsection": (point.payload or {}).get("subsection"),
+                "reason_codes": (point.payload or {}).get("reason_codes", []),
+                "has_table": (point.payload or {}).get("has_table", False),
+                "chunk_index": (point.payload or {}).get("chunk_index"),
                 "effective_date": (point.payload or {}).get("effective_date"),
+                "status": (point.payload or {}).get("status"),
+                "source": (point.payload or {}).get("source"),
             }
             for point in results.points
         ]
@@ -343,4 +350,4 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 
-# uv run python -m knowledge.ingestion
+# uv run python -m knowledge.knowledge_base

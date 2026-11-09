@@ -1,74 +1,69 @@
-
 import re
-from pathlib import Path
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
-from langchain_core.documents import Document
+REASON_CODES = ["damaged", "defective", "wrong_item", "not_as_described",
+                "quality", "arrived_late", "no_longer_needed"]
+
+# not policy rules -> never retrieve these
+SKIP_SECTIONS = ("Document control", "Out of scope", "Test scenarios", "Change log")
 
 
-def split_by_headings(file_path: str) -> list[Document]:
-    """
-    Split a Markdown policy document by ## and ### headings.
+def split_policy(file_path: str, chunk_size: int = 1200) -> list:
+    with open(file_path, encoding="utf-8") as f:
+        text = f.read()
 
-    Each section becomes a LangChain Document with metadata
-    containing its heading hierarchy.
-    """
-
-    text = Path(file_path).read_text(encoding="utf-8")
-
-    # Match only level 2 and level 3 headings.
-    heading_pattern = re.compile(
-        r"^(#{2,3})\s+(.+?)\s*$",
-        re.MULTILINE,
+    md = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[("#", "doc"), ("##", "section"), ("###", "subsection")],
+        strip_headers=False,
     )
+    rec = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=0)
+    docs = rec.split_documents(md.split_text(text))
 
-    matches = list(heading_pattern.finditer(text))
+    out = []
+    table_headers = {}  # (section, subsection) -> first two table lines
 
-    documents: list[Document] = []
+    for d in docs:
+        section = d.metadata.get("section")
+        subsection = d.metadata.get("subsection")
 
-    current_h2: str | None = None
+        # drop intro and non-policy sections
+        if not section or any(s in section for s in SKIP_SECTIONS):
+            continue
 
-    for index, match in enumerate(matches):
-        heading_level = len(match.group(1))
-        heading_title = match.group(2).strip()
+        content = d.page_content.replace("  \n", "\n").strip()
+        lines = content.splitlines()
+        key = (section, subsection)
 
-        start = match.start()
-        end = (
-            matches[index + 1].start()
-            if index + 1 < len(matches)
-            else len(text)
-        )
+        # remember the table header the first time we see a table in this section
+        for i in range(len(lines) - 1):
+            if lines[i].startswith("|") and lines[i + 1].startswith("| ---"):
+                table_headers.setdefault(key, f"{lines[i]}\n{lines[i + 1]}")
+                break
 
-        content = text[start:end].strip()
+        # continuation table chunk (starts with a row, not a header) -> add header row
+        is_cut_table = (content.startswith("|")
+                        and not (len(lines) > 1 and lines[1].startswith("| ---")))
+        if is_cut_table and key in table_headers:
+            content = f"{table_headers[key]}\n{content}"
 
-        if heading_level == 2:
-            current_h2 = heading_title
-            current_h3 = None
+        # continuation chunk (no heading) -> add heading
+        if not content.startswith("#"):
+            heading = f"### {subsection}" if subsection else f"## {section}"
+            content = f"{heading}\n\n{content}"
 
-        else:
-            current_h3 = heading_title
-
-        documents.append(
-            Document(
-                page_content=content,
-                metadata={
-                    "heading_level": heading_level,
-                    "parent_section": current_h2,
-                    "section": heading_title,
-                },
-            )
-        )
-
-    return documents
+        num = re.match(r"(\d+)\.", section)
+        out.append(type(d)(
+            page_content=content,
+            metadata={
+                "section": section,
+                "section_no": int(num.group(1)) if num else 0,
+                "subsection": subsection or "",
+                "reason_codes": [r for r in REASON_CODES if f"`{r}`" in content],
+                "has_table": "| ---" in content,
+            },
+        ))
+    return out
 
 
-if __name__ == "__main__":
-    chunks = split_by_headings(
-        "knowledge/policies/Policy-docs_V1.md"
-    )
-
-    print(f"Total chunks: {len(chunks)}")
-
-    for index, chunk in enumerate(chunks, start=1):
-        print(f"\n--- Chunk {index} ---")
-        print("Metadata:", chunk.metadata)
-        print("Content:", chunk.page_content)
+chunks=split_policy(file_path="/home/anish/Documents/Project/Retail-Refund/knowledge/policies/Policy.md")
+print(len(chunks))
