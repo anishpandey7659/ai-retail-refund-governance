@@ -161,9 +161,9 @@ class Return(Base, TS):
     )
     __table_args__ = (
         CheckConstraint(
-            "reason_code IN ('damaged', 'not_as_described', "
-            "'wrong_item', 'no_longer_needed', 'defective', "
-            "'arrived_late', 'quality')",
+            "reason_code IN ('damaged', 'not_as_described','quality',"
+            "'wrong_item', 'no_longer_needed', 'defective','arrived_late',"
+            "'wrong_size','item_not_received','duplicate_item','accidental_order')",
             name="ck_returns_reason_code",
         ),
         CheckConstraint(
