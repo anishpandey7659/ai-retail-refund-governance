@@ -75,12 +75,21 @@ class Order(Base,TS):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     shipping_address: Mapped[str] = mapped_column(Text)
     card_last4: Mapped[str] = mapped_column(String(4))
+    # Store only a keyed fingerprint from the payment provider, never raw payment data.
+    payment_method_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Keyed payment-provider fingerprint; never raw payment data",
+    )
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     delivered_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
     items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan"
+    )
+    address_changes: Mapped[list["OrderAddressChange"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
 
@@ -109,6 +118,23 @@ class OrderItem(Base,TS):
             f"<OrderItem id={self.id} order_id={self.order_id} "
             f"product_id={self.product_id} qty={self.quantity}>"
         )
+
+
+class OrderAddressChange(Base):
+    """Record actual address changes so they can be compared with delivery time."""
+
+    __tablename__ = "order_address_changes"
+    __table_args__ = (
+        Index("ix_order_address_changes_order_changed", "order_id", "changed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = PK()
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    changed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    order: Mapped["Order"] = relationship(back_populates="address_changes")
 
 
 
@@ -159,6 +185,10 @@ class Return(Base, TS):
     photos: Mapped[list["ReturnPhoto"]] = relationship(
         back_populates="return_", cascade="all, delete-orphan"
     )
+    inspection: Mapped["ReturnInspection | None"] = relationship(
+        back_populates="return_", cascade="all, delete-orphan", uselist=False
+    )
+    refunds: Mapped[list["ReturnRefund"]] = relationship(back_populates="return_")
     __table_args__ = (
         CheckConstraint(
             "reason_code IN ('damaged', 'not_as_described','quality',"
@@ -195,6 +225,89 @@ class ReturnPhoto(Base, TS):
         return (
             f"<ReturnPhoto id={self.id} return_id={self.return_id} "
         )
+
+
+class ReturnInspection(Base):
+    """One optional inspection per return; nullable values represent unknown facts."""
+
+    __tablename__ = "return_inspections"
+
+    id: Mapped[uuid.UUID] = PK()
+    return_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("returns.id"), unique=True
+    )
+    item_received: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    item_opened: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    inspected_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    inspected_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    recorded_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    return_: Mapped["Return"] = relationship(back_populates="inspection")
+
+
+class RefundStatus(str, enum.Enum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class ReturnRefund(Base):
+    __tablename__ = "return_refunds"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_return_refunds_amount_positive"),
+        CheckConstraint(
+            "status IN ('pending', 'succeeded', 'failed')",
+            name="ck_return_refunds_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = PK()
+    return_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("returns.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default=RefundStatus.PENDING.value,
+        server_default=text("'pending'"),
+    )
+    destination_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Keyed fingerprint for comparison; never raw payment data",
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    processed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    return_: Mapped["Return"] = relationship(back_populates="refunds")
+
+
+class SupportContact(Base):
+    """A customer-initiated support contact; count rows for contact-volume features."""
+
+    __tablename__ = "support_contacts"
+    __table_args__ = (
+        Index("ix_support_contacts_user_contacted", "user_id", "contacted_at"),
+    )
+
+    id: Mapped[uuid.UUID] = PK()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
+    return_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("returns.id"), nullable=True
+    )
+    channel: Mapped[str] = mapped_column(String(20))
+    contacted_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 # ------------------------- Rule & dials (The policy) -----------------------------------------------
 
