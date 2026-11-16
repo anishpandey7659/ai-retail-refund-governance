@@ -37,11 +37,13 @@ class Settings(BaseSettings):
     
     # SQLAlchemy / asyncpg
     sqlalchemy_database_url: str = Field(
+        default="",
         validation_alias="DATABASE_URL"
     )
 
     # Psycopg
     database_url: str = Field(
+        default="",
         validation_alias="DATABASE_PSYCOPG_URL"
     )
 
