@@ -193,29 +193,53 @@ def get_postgresql_db() -> PostgreSQLDatabase:
 _PUBLIC_ENDPOINT = "http://localhost:9000"
 _cfg = BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"})
 
+@lru_cache(maxsize=1)
+def _s3_client(endpoint: str | None = None):
+    if not (
+        settings.minio_endpoint
+        and settings.minio_access_key
+        and settings.minio_secret_key
+        and settings.minio_bucket_name
+    ):
+        raise RuntimeError("MinIO image-storage settings are incomplete.")
 
-def _client(endpoint: str | None = None):
+    endpoint = endpoint or settings.minio_endpoint
+    if not endpoint.startswith(("http://", "https://")):
+        scheme = "https" if settings.minio_secure else "http"
+        endpoint = f"{scheme}://{endpoint}"
+
     return boto3.client(
         "s3",
-        endpoint_url=endpoint or settings.minio_endpoint,
+        endpoint_url=endpoint,
         aws_access_key_id=settings.minio_access_key,
         aws_secret_access_key=settings.minio_secret_key,
         config=_cfg,
         region_name="auto",
     )
 
-
 def put_bytes(key: str, data: bytes, content_type: str) -> None:
-    _client().put_object(
+    _s3_client().put_object(
         Bucket=settings.minio_bucket_name, Key=key, Body=data, ContentType=content_type
     )
 
+def download_image(object_key: str) -> bytes:
+    response = _s3_client().get_object(
+        Bucket=settings.minio_bucket_name,
+        Key=object_key,
+    )
+    body = response["Body"]
+    try:
+        return body.read()
+    finally:
+        body.close()
+
+
 def delete_object(key: str) -> None:
-    _client().delete_object(Bucket=settings.minio_bucket_name, Key=key)
+    _s3_client().delete_object(Bucket=settings.minio_bucket_name, Key=key)
 
 
 def presigned_get(key: str, expires: int = 3600) -> str:
-    return _client(_PUBLIC_ENDPOINT).generate_presigned_url(
+    return _s3_client(_PUBLIC_ENDPOINT).generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.minio_bucket_name, "Key": key},
         ExpiresIn=expires,
@@ -224,7 +248,7 @@ def presigned_get(key: str, expires: int = 3600) -> str:
 
 def exists(key: str) -> bool:
     try:
-        _client().head_object(Bucket=settings.minio_bucket_name, Key=key)
+        _s3_client().head_object(Bucket=settings.minio_bucket_name, Key=key)
         return True
     except Exception:
         return False
