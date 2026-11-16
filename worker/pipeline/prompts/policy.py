@@ -48,7 +48,7 @@ OUTPUT
 Respond with ONLY a valid JSON object, no markdown or extra text:
 
 {{
-    "eligible": true,
+    "eligible": true/false,
     "reason": "One or two sentences explaining the decision.",
     "policy_references": [
         {{
