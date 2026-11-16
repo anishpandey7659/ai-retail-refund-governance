@@ -12,3 +12,5 @@ wheels/
 .env
 docker-compose.override.yml
 *.png
+!assets/
+!assets/*.png
