@@ -1,7 +1,6 @@
 SERVICES = postgres minio mailhog redis keycloak qdrant
 ONESHOT  = minio-init
-
-.PHONY: up check seed down run worker stop
+.PHONY: up check seed down run worker stop test_worker
 
 up:
 	docker compose up -d 
@@ -14,7 +13,6 @@ check:
 		docker compose ps -a --status exited --format '{{.Service}} {{.ExitCode}}' | grep -qx "$$s 0" || { echo "$$s did not complete successfully. Run: make up"; exit 1; }; \
 	done
 	@echo "All services are ready"
-	
 
 seed: check
 	PYTHONPATH=. uv run python seed/seed.py
