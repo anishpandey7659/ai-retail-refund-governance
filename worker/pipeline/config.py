@@ -1,22 +1,49 @@
-import os
 from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
-from pydantic import BaseModel
 
-class Settings(BaseModel):
-    mcp_server_url: str = os.getenv("MCP_SERVER_URL", "http://localhost:8070/mcp")
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6380/0")
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    mcp_server_url: str = "http://localhost:8070/mcp"
+    redis_url: str = "redis://localhost:6380/0"
+
+    openai_api_key: str = ""
+    groq_api_key: str = ""
+
+    llm_provider: str = "groq"
+    llm_model: str = "openai/gpt-oss-20b"
+
+    fallback_llm_provider: str = "openai"
+    fallback_llm_model: str = "gpt-4o-mini"
+
+    image_model: str = "gpt-4o"
+
+    minio_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket_name: str = ""
+    minio_secure: bool = False
+
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_base_url: str = ""
     
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    # SQLAlchemy / asyncpg
+    sqlalchemy_database_url: str = Field(
+        validation_alias="DATABASE_URL"
+    )
 
-    llm_provider: str = os.getenv("LLM_PROVIDER", "groq")  
-    llm_model: str = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")  
-
-    fallback_llm_provider: str = os.getenv("FALLBACK_LLM_PROVIDER", "openai")
-    fallback_llm_model: str = os.getenv("FALLBACK_LLM_MODEL", "gpt-4o-mini")
-
-    database_url: str = os.getenv("DATABASE_PSYCOPG_URL", "postgresql://anish:pandey@127.0.0.1:5432/retail-refund")
+    # Psycopg
+    database_url: str = Field(
+        validation_alias="DATABASE_PSYCOPG_URL"
+    )
 
 @lru_cache
 def get_settings() -> Settings:
