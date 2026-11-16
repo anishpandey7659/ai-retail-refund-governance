@@ -9,28 +9,36 @@
 
 ---
 
-## 1. Purpose
+## 1. Return Eligibility by Reason
 
-This policy defines the conditions, eligibility requirements, procedures, and restrictions governing product returns and customer refunds.
+| Reason Code | Return Eligibility | Required Conditions |
+|---|---|---|
+| `damaged` | Eligible | Product arrived physically damaged. Photo evidence may be requested. |
+| `not_as_described` | Eligible | Product materially differs from its listing, specifications, or description. |
+| `wrong_item` | Eligible | Customer received a different product, model, size, or variant. |
+| `no_longer_needed` | Conditional | Product must be unused, unopened, and in original packaging. |
+| `defective` | Eligible | Product has a manufacturing defect or does not function as intended. |
+| `arrived_late` | Conditional | Delivery occurred after the promised delivery date and the delay affected the customer's purchase. |
+| `quality` | Conditional | Product has a demonstrable quality issue that materially affects expected use or performance. |
 
-The objective is to ensure consistent, transparent, and fair return decisions while protecting the business against fraudulent return activities.
 
-All return requests must be evaluated against this policy before a refund or return approval is issued.
+## 2. Return windows
 
-## 2. General Return Eligibility
+The delivery date is Day 0. The last eligible day is Day N, ending at 23:59 in the time zone of the delivery address. A request on Day 30 is on time; a request on Day 31 is late.
 
-Customers may request a return within **30 calendar days** from the date the product is delivered.
+| Reason | Standard, clothing, furniture | Electronics |
+| --- | --- | --- |
+| `no_longer_needed` | 30 days | 15 days |
+| `damaged`, `defective`, `wrong_item`, `not_as_described`, `quality`, `arrived_late` | 30 days | 30 days |
 
-A return is eligible when all the following conditions are satisfied:
+The shorter electronics window applies only to change-of-mind returns. A damaged laptop reported on day 20 is within its window.
 
-1. The purchase was made through an authorized sales channel.
-2. The return request was submitted within the applicable return window.
-3. The customer can provide a valid order reference.
-4. The product belongs to an eligible product category.
-5. The product satisfies the applicable condition requirements.
-6. The product has not previously been refunded or returned.
+### Late requests
 
-**Important:** Meeting the return-window requirement does not automatically guarantee refund approval. Product condition, category restrictions, and other policy requirements must also be evaluated.
+| Reason | Handling |
+| --- | --- |
+| `no_longer_needed` | Deny automatically with a clear explanation. The customer may appeal under Section 11. |
+| Every other reason | Escalate to a human reviewer, who may approve or deny the exception. |
 
 ## 3. Return Time Windows
 
