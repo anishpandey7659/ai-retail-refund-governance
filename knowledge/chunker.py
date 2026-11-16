@@ -64,6 +64,6 @@ def split_policy(file_path: str, chunk_size: int = 1200) -> list:
         ))
     return out
 
-
-chunks=split_policy(file_path="/home/anish/Documents/Project/Retail-Refund/knowledge/policies/Policy.md")
-print(len(chunks))
+if __name__ == "__main__":
+    chunks=split_policy(file_path="/home/anish/Documents/Project/Retail-Refund/knowledge/policies/Policy.md")
+    print(len(chunks))
