@@ -58,3 +58,135 @@ RETURN_QUERY = """
         ON p.id = oi.product_id
     WHERE r.id = %(return_id)s::uuid
 """
+
+
+ML_CONTEXT_QUERY = """
+    WITH target AS (
+        SELECT
+            r.id AS return_id,
+            r.user_id,
+            r.order_id,
+            r.created_at AS return_created_at,
+            r.amount,
+            r.reason_code,
+            o.created_at AS order_created_at,
+            o.delivered_at,
+            to_jsonb(o) ->> 'payment_method_fingerprint'
+                AS order_payment_fingerprint
+        FROM returns r
+        JOIN orders o ON o.id = r.order_id
+        WHERE r.id = %(return_id)s::uuid
+    )
+    SELECT
+        CASE
+            WHEN history.item_count > 0
+            THEN round(
+                100.0 * history.returned_item_count / history.item_count,
+                2
+            )
+            ELSE NULL
+        END AS return_rate_pct,
+        support.contact_count AS customer_support_contacts,
+        CASE
+            WHEN history.order_total > 0
+            THEN round(
+                COALESCE(history.refund_total, 0) / history.order_total,
+                4
+            )
+            ELSE NULL
+        END AS refund_to_order_ratio,
+        appeals.previous_dispute_count,
+        inspection.item_opened AS item_returned_opened,
+        fingerprints.multiple_accounts_flag,
+        CASE
+            WHEN target.order_payment_fingerprint IS NULL
+              OR refund.destination_fingerprint IS NULL
+            THEN NULL
+            ELSE target.order_payment_fingerprint
+                 <> refund.destination_fingerprint
+        END AS refund_to_different_account,
+        target.amount AS refund_amount_requested_usd,
+        target.reason_code AS return_reason,
+        CASE
+            WHEN target.delivered_at IS NULL THEN NULL
+            ELSE EXISTS (
+                SELECT 1
+                FROM order_address_changes ac
+                WHERE ac.order_id = target.order_id
+                  AND ac.changed_at >= target.order_created_at
+                  AND ac.changed_at <= target.delivered_at
+                  AND ac.changed_at <= target.return_created_at
+            )
+        END AS address_change_before_delivery
+    FROM target
+    CROSS JOIN LATERAL (
+        SELECT
+            (
+                SELECT count(*)
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE o.user_id = target.user_id
+                  AND o.created_at < target.order_created_at
+            ) AS item_count,
+            (
+                SELECT count(DISTINCT h.order_item_id)
+                FROM returns h
+                JOIN orders ho ON ho.id = h.order_id
+                WHERE h.user_id = target.user_id
+                  AND h.created_at < target.return_created_at
+                  AND ho.created_at < target.order_created_at
+            ) AS returned_item_count,
+            (
+                SELECT COALESCE(sum(o.total_amount), 0)
+                FROM orders o
+                WHERE o.user_id = target.user_id
+                  AND o.created_at < target.order_created_at
+            ) AS order_total,
+            (
+                SELECT sum(rf.amount)
+                FROM return_refunds rf
+                JOIN returns hr ON hr.id = rf.return_id
+                JOIN orders ho ON ho.id = hr.order_id
+                WHERE hr.user_id = target.user_id
+                  AND hr.created_at < target.return_created_at
+                  AND ho.created_at < target.order_created_at
+                  AND rf.status = 'succeeded'
+                  AND rf.processed_at <= target.return_created_at
+            ) AS refund_total
+    ) AS history
+    CROSS JOIN LATERAL (
+        SELECT count(*)::integer AS contact_count
+        FROM support_contacts sc
+        WHERE sc.user_id = target.user_id
+          AND sc.contacted_at < target.return_created_at
+    ) AS support
+    CROSS JOIN LATERAL (
+        SELECT count(*)::integer AS previous_dispute_count
+        FROM appeals a
+        WHERE a.user_id = target.user_id
+          AND a.created_at < target.return_created_at
+    ) AS appeals
+    CROSS JOIN LATERAL (
+        SELECT CASE
+            WHEN count(own.id) = 0 THEN NULL
+            ELSE bool_or(other.user_id IS NOT NULL)
+        END AS multiple_accounts_flag
+        FROM fingerprints own
+        LEFT JOIN fingerprints other
+          ON other.fingerprint_type = own.fingerprint_type
+         AND other.fingerprint_hash = own.fingerprint_hash
+         AND other.user_id <> target.user_id
+        WHERE own.user_id = target.user_id
+    ) AS fingerprints
+    LEFT JOIN return_inspections inspection
+      ON inspection.return_id = target.return_id
+    LEFT JOIN LATERAL (
+        SELECT rf.destination_fingerprint
+        FROM return_refunds rf
+        WHERE rf.return_id = target.return_id
+          AND rf.created_at <= target.return_created_at
+          AND rf.destination_fingerprint IS NOT NULL
+        ORDER BY rf.created_at DESC
+        LIMIT 1
+    ) AS refund ON TRUE
+"""
