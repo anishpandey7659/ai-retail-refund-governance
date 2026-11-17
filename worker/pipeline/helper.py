@@ -1,7 +1,12 @@
+from __future__ import annotations
+
+import os
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from worker.pipeline.db import _rows
+from worker.pipeline.nodes import base
 from worker.pipeline.nodes.base import (
     Case,
     CustomerHistory,
@@ -10,6 +15,9 @@ from worker.pipeline.nodes.base import (
     ProductInfo,
 )
 from worker.pipeline.query import ML_CONTEXT_QUERY, RETURN_QUERY
+from worker.pipeline.config import get_settings
+if TYPE_CHECKING:
+    from worker.pipeline.workflow import WorkflowState
 
 MONEY_FIELDS = ("amount", "price_at_purchase", "current_product_price")
 
@@ -119,3 +127,104 @@ async def load_ml_context(return_id: str) -> dict:
             context[field] = int(context[field])
 
     return context
+
+from psycopg.types.json import Jsonb
+
+
+def _extract_decision(case: Case) -> tuple[str, str | None]:
+    # TODO: adjust to where your workflow stores the decision/explanation.
+    # Example if the decision is in case.status and the explanation in an agent result:
+    decision = case.status
+    explanation = None
+    # e.g. explanation = case.agent_results["explanation"].summary
+    return decision, explanation
+
+
+async def add_to_queue(pool, return_id: str, case: Case) -> bool:
+    """Insert into review_queue. Returns False if already queued (safe for arq retries)."""
+    decision, explanation = _extract_decision(case)
+
+    query = """
+        INSERT INTO review_queue
+            (order_id, decision, explanation, payload, status, created_at)
+        VALUES
+            (%s, %s, %s, %s, 'pending', now())
+        ON CONFLICT (order_id) DO NOTHING
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            query,
+            (
+                return_id,
+                decision,
+                explanation,
+                Jsonb(case.model_dump(mode="json")),  # handles enums, datetimes, nested models
+            ),
+        )
+        return cur.rowcount == 1
+
+
+def customer_message(result: WorkflowState) -> str:
+    """Build the customer-facing message from workflow results."""
+    case = result["case"]
+    product = (
+        case.product_info.title
+        if case.product_info is not None
+        else case.item_name
+    )
+    explanation = case.agent_results.get("explanation")
+    if (
+        explanation is not None
+        and isinstance(explanation.output, base.ExplanationResult)
+    ):
+        return explanation.output.message
+
+    intake = case.agent_results.get("intake")
+    if intake is not None and isinstance(intake.output, base.IntakeResult):
+        reason = result.get("skip_reason") or intake.output.notes
+        if intake.output.status == "missing_info":
+            return (
+                f"We need more information to review your return request for "
+                f"{product}. Please provide the missing details: {reason}"
+            )
+        return (
+            f"We couldn't approve your return request for {product} because "
+            f"the return details could not be verified: {reason}"
+        )
+
+    policy = case.agent_results.get("policy")
+    if policy is not None and isinstance(policy.output, base.PolicyResult):
+        reason = result.get("skip_reason") or policy.output.reason
+        if policy.output.eligible is False:
+            return (
+                f"Your return request for {product} was not approved because "
+                f"it does not meet the return policy requirements: {reason}"
+            )
+        return (
+            f"We need additional time to review your return request for "
+            f"{product}. The policy check needs clarification: {reason}"
+        )
+
+    gate = case.agent_results.get("gate")
+    if gate is not None and isinstance(gate.output, base.GateResult):
+        return (
+            f"We need more information before we can review your return "
+            f"request for {product}: "
+            f"{result.get('skip_reason') or gate.output.reason}"
+        )
+
+    if result.get("skip_reason"):
+        return (
+            f"We couldn't complete the review of your return request for "
+            f"{product}. {result['skip_reason']}"
+        )
+    return (
+        f"We need additional time to review your return request for {product}. "
+        "We’ll update you when the review is complete."
+    )
+
+def is_kill_switch_on() -> bool:
+    value = get_settings().human_review_kill_switch
+    if value is None:
+        return True  # fail safe: default to human review
+    return value

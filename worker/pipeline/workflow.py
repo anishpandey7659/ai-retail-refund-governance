@@ -1,12 +1,12 @@
-import logging
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from langgraph.graph import END, START, StateGraph
 
+from worker.pipeline.logger import get_logger
 from worker.pipeline.nodes import agents, base
 from worker.pipeline.tracing import observation, update_observation
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 PRE_DECISION_AGENTS = frozenset({"intake", "policy", "image", "behavior"})
 
@@ -20,14 +20,15 @@ class WorkflowState(TypedDict):
     skip_reason: str | None
 
 
-async def run_workflow(case: base.Case) -> base.Case:
-    """Run the return-review workflow and return the enriched case.
+async def run_workflow(case: base.Case) -> WorkflowState:
+    """Run the return-review workflow and return its complete final state.
 
     The workflow runs the data-quality gate first and stops immediately if it
     fails. Otherwise, it executes planner-selected evidence agents, then records
     a decision proposal and customer-safe explanation. Agent failures are
-    retained on the case and do not prevent a safe decision. No refund is
-    executed and the case's final status is not changed here.
+    retained on the case and do not prevent a safe decision. Intake and policy
+    outcomes and the decision proposal update the case status; no refund is
+    executed here.
     """
     with observation(
         name="return-review-workflow",
@@ -36,6 +37,13 @@ async def run_workflow(case: base.Case) -> base.Case:
         try:
             result = await _run_workflow(case)
         except Exception as error:
+            logger.exception(
+                "Return review workflow failed",
+                extra={
+                    "case_id": case.case_id,
+                    "error_type": type(error).__name__,
+                },
+            )
             update_observation(
                 span,
                 status="error",
@@ -43,12 +51,25 @@ async def run_workflow(case: base.Case) -> base.Case:
             )
             raise
         update_observation(span, status="success")
+    logger.info(
+        "Return review workflow completed",
+        extra={
+            "case_id": result["case"].case_id,
+            "final_status": result["case"].status,
+        },
+    )
     return result
 
 
 async def _run_data_quality_gate(state: WorkflowState) -> dict:
     result = await agents.data_quality_gate(state["case"])
-    return {"gate_result": result}
+    if not result.ok:
+        state["case"].status = "in_review"
+    return {
+        "gate_result": result,
+        "skip_workflow": not result.ok,
+        "skip_reason": result.reason if not result.ok else None,
+    }
 
 
 async def _run_planner(state: WorkflowState) -> dict:
@@ -71,7 +92,10 @@ def _route_after_gate(state: WorkflowState) -> str:
     case = state["case"]
     logger.info(
         "Data-quality gate failed; skipping workflow",
-        extra={"case_id": case.case_id, "reason": state["gate_result"].reason},
+        extra={
+            "case_id": case.case_id,
+            "reason_code": state["gate_result"].reason,
+        },
     )
     return "end"
 
@@ -82,7 +106,12 @@ def _route_selected_agent(state: WorkflowState) -> str:
             "Agent result requires workflow skip",
             extra={
                 "case_id": case.case_id,
-                "reason": state.get("skip_reason"),
+                "agent": (
+                    state["planner_steps"][state["agent_index"] - 1]
+                    if state["agent_index"] > 0
+                    else "unknown"
+                ),
+                "status": case.status,
             },
         )
         return "end"
@@ -112,10 +141,20 @@ async def _run_selected_agent(state: WorkflowState) -> dict:
             "mismatch",
             "missing_info",
         }:
+            case.status = "denied"
+            logger.info(
+                "Intake stopped the workflow",
+                extra={
+                    "agent": agent_name,
+                    "case_id": case.case_id,
+                    "status": output.status,
+                    "reason_code": output.status,
+                },
+            )
             return {
                 "agent_index": state["agent_index"] + 1,
                 "skip_workflow": True,
-                "skip_reason": f"Intake returned {output.status}.",
+                "skip_reason": output.notes,
             }
     elif agent_name == "policy":
         policy_result = case.agent_results.get("policy")
@@ -123,10 +162,19 @@ async def _run_selected_agent(state: WorkflowState) -> dict:
         if isinstance(output, base.PolicyResult) and (
             output.eligible is False or output.eligible == "unclear"
         ):
+            case.status = "denied" if output.eligible is False else "in_review"
+            logger.info(
+                "Policy stopped the workflow",
+                extra={
+                    "agent": agent_name,
+                    "case_id": case.case_id,
+                    "status": "ineligible" if output.eligible is False else "unclear",
+                },
+            )
             return {
                 "agent_index": state["agent_index"] + 1,
                 "skip_workflow": True,
-                "skip_reason": f"Policy returned eligible={output.eligible} ,reason={output.reason}.",
+                "skip_reason": output.reason,
             }
 
     return {
@@ -136,7 +184,21 @@ async def _run_selected_agent(state: WorkflowState) -> dict:
     }
 
 async def _run_decision(state: WorkflowState) -> dict:
-    await agents.decision(state["case"])
+    proposal = await agents.decision(state["case"])
+    if proposal.proposal == "approve":
+        state["case"].status = "approved"
+    elif proposal.proposal == "deny":
+        state["case"].status = "denied"
+    else:
+        state["case"].status = "escalated"
+    logger.info(
+        "Decision proposal recorded",
+        extra={
+            "case_id": state["case"].case_id,
+            "proposal": proposal.proposal,
+            "final_status": state["case"].status,
+        },
+    )
     return {}
 
 
@@ -184,7 +246,7 @@ def _build_workflow():
 _workflow = _build_workflow()
 
 
-async def _run_workflow(case: base.Case) -> base.Case:
+async def _run_workflow(case: base.Case) -> WorkflowState:
     state: WorkflowState = {
         "case": case,
         "gate_result": base.GateResult(ok=False, reason="Gate has not run."),
@@ -194,4 +256,4 @@ async def _run_workflow(case: base.Case) -> base.Case:
         "skip_reason": None,
     }
     result = await _workflow.ainvoke(state)
-    return result["case"]
+    return cast(WorkflowState, result)

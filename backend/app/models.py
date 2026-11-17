@@ -1,5 +1,5 @@
 from sqlalchemy import ( BigInteger,Boolean,CheckConstraint,DateTime,ForeignKey,Index,Integer,Numeric,UniqueConstraint,
-                        String,Text,func,text,Enum,Float)
+                        String,Text,func,text,Enum,Float, JSON)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from decimal import Decimal
@@ -289,6 +289,31 @@ class ReturnRefund(Base):
 
     return_: Mapped["Return"] = relationship(back_populates="refunds")
 
+#----------------------------------------------Review queue----------------------------------------
+
+class ReviewQueue(Base):
+    __tablename__ = "review_queue"
+
+    order_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    explanation: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict | None] = mapped_column(JSON)  # full workflow output
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="ck_review_queue_status",
+        ),
+        Index("ix_review_queue_status_created", "status", "created_at"),
+    )
 
 class SupportContact(Base):
     """A customer-initiated support contact; count rows for contact-volume features."""
@@ -518,46 +543,6 @@ class Fingerprint(Base):
         return (
             f"<Fingerprint id={self.id} user_id={self.user_id} "
             f"type={self.fingerprint_type.value}>"
-        )
-
-
-# ───────────────────────── ML ─────────────────────────────────────────────────────────────────────────────────
-
-class ModelType(str, enum.Enum):
-    CLASSIFICATION = "classification"
-    REGRESSION = "regression"
-
-
-class ModelRegistry(Base):
-    __tablename__ = "model_registry"
-    __table_args__ = (
-        UniqueConstraint("model_name", "version", name="uq_model_name_version"),
-        # at most one active version per model name
-        Index(
-            "uq_one_active_model_version",
-            "model_name",
-            unique=True,
-            postgresql_where=text("is_active"),
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = PK()
-    model_name: Mapped[str] = mapped_column(String(100), index=True)
-    version: Mapped[str] = mapped_column(String(50))
-    model_type: Mapped[ModelType] = mapped_column(Enum(ModelType, name="model_type"))
-    training_data_period: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    artifact_uri: Mapped[str] = mapped_column(String(500))  # MinIO location
-    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-
-    def __repr__(self) -> str:
-        return (
-            f"<ModelRegistry id={self.id} name={self.model_name!r} "
-            f"version={self.version!r} active={self.is_active}>"
         )
 
 
