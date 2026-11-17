@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 
 import pandas as pd
 
@@ -8,6 +7,7 @@ from ml.image_service import analyze_image
 from ml.model_service import risk_probability
 from worker.pipeline.config import get_settings
 from worker.pipeline.llm import init_chat
+from worker.pipeline.logger import get_logger
 from worker.pipeline.nodes import base
 from worker.pipeline.nodes.agent_helpers import (
     RISK_WEIGHTS,
@@ -21,7 +21,7 @@ from worker.pipeline.nodes.agent_helpers import (
     _validate_decision_proposal,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _settings = get_settings()
 DECISION_MODEL = (

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     image_model: str = "gpt-4o"
 
+    human_review_kill_switch:bool =True
+
     minio_endpoint: str = ""
     minio_access_key: str = ""
     minio_secret_key: str = ""

@@ -1,7 +1,10 @@
-from psycopg.rows import dict_row
 from typing import LiteralString
-from worker.pipeline.config import get_settings
+
+from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
+
+from worker.pipeline.config import get_settings
+from worker.pipeline.logger import get_logger
 
 _pool = AsyncConnectionPool(
     conninfo=get_settings().database_url,
@@ -9,6 +12,7 @@ _pool = AsyncConnectionPool(
     max_size=4,
     open=False, # Don't open connections until first use
 )
+logger = get_logger(__name__)
 
 async def _rows(sql: LiteralString, params: dict):
     async with _pool.connection() as conn:
@@ -18,15 +22,23 @@ async def _rows(sql: LiteralString, params: dict):
 
 
 async def startup(ctx: dict):
-    print("Starting ARQ worker...")
-    await _pool.open()
+    logger.info("Starting worker database connection")
+    try:
+        await _pool.open()
+    except Exception:
+        logger.exception("Could not open worker database connection")
+        raise
     ctx["db_pool"] = _pool
-    print("Database connected!")
+    logger.info("Worker database connection established")
 
 
 async def shutdown(ctx: dict):
-    print("Shutting down ARQ worker...")
+    logger.info("Closing worker database connection")
     db_pool = ctx.get("db_pool")
     if db_pool:
-        await db_pool.close()
-    print("Database connection closed!")
+        try:
+            await db_pool.close()
+        except Exception:
+            logger.exception("Could not close worker database connection")
+            raise
+    logger.info("Worker database connection closed")

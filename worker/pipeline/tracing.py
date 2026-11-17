@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
@@ -7,8 +6,9 @@ from typing import Any
 from langfuse import Langfuse
 
 from worker.pipeline.config import get_settings
+from worker.pipeline.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 @lru_cache(maxsize=1)
 def get_langfuse_client() -> Langfuse | None:

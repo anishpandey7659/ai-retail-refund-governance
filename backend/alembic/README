@@ -1,17 +1,49 @@
-Generic single-database configuration.
+## Workflow for each schema change
 
+1. **Update the SQLAlchemy model.** Add, remove, or modify the columns,
+   relationships, indexes, or constraints in `backend/app/models.py`.
 
-Your everyday workflow
-1. Modify SQLAlchemy models
-   
-   Add, remove, or modify columns, relationships, indexes, constraints, etc.
-2. Generate migration
-   uv run alembic -c backend/alembic.ini revision --autogenerate -m "describe_change"
-3. Review migration
-   
-   Check generated SQL operations and data implications.
-4. Apply migration
+2. **Check the database target and migration position.** Make sure your
+   environment points to the intended database before running migrations.
+   The URL is loaded by `backend/alembic/env.py` from the PostgreSQL settings
+   (including `DATABASE_URL`), not necessarily from the placeholder in
+   `backend/alembic.ini`.
+
+   ```bash
+   uv run alembic -c backend/alembic.ini current
+   uv run alembic -c backend/alembic.ini heads
+   ```
+
+   If `current` is behind `heads`, resolve and apply the existing migrations
+   before generating another one. Do not stamp a revision unless you have
+   verified that the database already contains every change from that revision.
+
+3. **Generate a migration.**
+
+   ```bash
+   uv run alembic -c backend/alembic.ini revision --autogenerate -m "describe the schema change"
+   ```
+
+4. **Review the generated file** in `backend/alembic/versions/` before
+   applying it. Check both `upgrade()` and `downgrade()`. Confirm it includes
+   the intended changes and does not contain unrelated operations (especially
+   table or column drops). Autogenerate is a draft; edit it when needed.
+
+5. **Apply the reviewed migration** to the intended development database.
+
+   ```bash
    uv run alembic -c backend/alembic.ini upgrade head
-5. Continue development
-   
-   Your PostgreSQL schema is now updated.
+   ```
+
+6. **Verify the database reached the expected revision.**
+
+   ```bash
+   uv run alembic -c backend/alembic.ini current
+   uv run alembic -c backend/alembic.ini heads
+   ```
+
+   Confirm `current` matches `heads` and, when practical, inspect the changed
+   tables, columns, indexes, and constraints in PostgreSQL.
+
+7. **Commit the model and migration together.** For code changes that do not
+   alter the database schema, no Alembic migration is needed.

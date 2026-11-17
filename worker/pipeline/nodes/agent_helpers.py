@@ -7,10 +7,12 @@ from typing import Any, Literal, TypeVar
 from catboost import CatBoostClassifier
 
 from ml.model_service import load_model
+from worker.pipeline.logger import get_logger
 from worker.pipeline.nodes import base
 from worker.pipeline.tracing import observation, update_observation
 
 OutputT = TypeVar("OutputT", bound=base.AgentOutput)
+logger = get_logger(__name__)
 
 RISK_WEIGHTS = {
     "legitimate": 0,
@@ -36,6 +38,10 @@ def _record_result(
         async def run(case: base.Case) -> OutputT:
             started_at = datetime.now(UTC).isoformat()
             started = perf_counter()
+            logger.info(
+                "Agent execution started",
+                extra={"agent": agent_name, "case_id": case.case_id},
+            )
             trace_metadata = {
                 "agent": agent_name,
                 "model": model or "unspecified",
@@ -70,6 +76,14 @@ def _record_result(
                         model=model,
                         prompt_version=prompt_version,
                     )
+                    logger.exception(
+                        "Agent execution failed",
+                        extra={
+                            "agent": agent_name,
+                            "case_id": case.case_id,
+                            "error_type": type(error).__name__,
+                        },
+                    )
                     raise
 
                 duration_ms = round((perf_counter() - started) * 1000)
@@ -95,6 +109,14 @@ def _record_result(
                 )
                 if agent_name == "gate" and isinstance(output, base.GateResult):
                     case.gate_result = output
+                logger.info(
+                    "Agent execution completed",
+                    extra={
+                        "agent": agent_name,
+                        "case_id": case.case_id,
+                        "duration_ms": duration_ms,
+                    },
+                )
                 return output
 
         return run
