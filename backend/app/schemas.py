@@ -57,6 +57,12 @@ class OrderOut(BaseModel):
     items: list[OrderItemOut]
 
 
+class OrderReviewOut(OrderOut):
+    customer_name: str
+    customer_email: str
+    shipping_address: str
+
+
 class ReturnCreateOut(BaseModel):
     id: str
     status: str

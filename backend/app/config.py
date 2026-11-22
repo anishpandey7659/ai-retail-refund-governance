@@ -1,7 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from pydantic import SecretStr
+
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class PostgreSQLSettings(BaseSettings):
@@ -38,16 +38,21 @@ class Settings(BaseSettings):
     minio_bucket_name: str =""
     minio_secure: bool = False
 
-    # Keycloak for autho
-    keycloak_issuer: str
-    keycloak_jwks_url: str
-    keycloak_internal_url: str
-    # keycloak_audience: str
+    # Keycloak
+    keycloak_url: str
+    keycloak_realm: str
     keycloak_client_id: str
-    keycloak_client_secret: str | None = None
 
     # Redis    
     redis_url: str =""
+
+    @property
+    def keycloak_issuer(self) -> str:
+        return f"{self.keycloak_url.rstrip('/')}/realms/{self.keycloak_realm}"
+
+    @property
+    def keycloak_jwks_url(self) -> str:
+        return f"{self.keycloak_issuer}/protocol/openid-connect/certs"
 
 
 @lru_cache

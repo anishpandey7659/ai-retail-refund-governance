@@ -2,29 +2,20 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.dependency import get_db_session
-from backend.app.models import Reviewer, User
 from backend.app.config import get_settings
+from backend.app.models import Reviewer, User
+from backend.dependency import get_db_session
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
-logging.getLogger("backend").setLevel(logging.INFO)
 log = logging.getLogger(__name__)
-
-# Gives Swagger its Authorize button and reads "Authorization: Bearer <token>"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 _jwks_client: jwt.PyJWKClient | None = None
 _jwks_at = 0.0
@@ -33,25 +24,15 @@ _jwks_at = 0.0
 def _jwks() -> jwt.PyJWKClient:
     global _jwks_client, _jwks_at
     if _jwks_client is None or time.time() - _jwks_at > 3600:
-        _jwks_client = jwt.PyJWKClient(get_settings().keycloak_jwks_url)
+        _jwks_client = jwt.PyJWKClient(
+            get_settings().keycloak_jwks_url,
+            cache_keys=True,
+        )
         _jwks_at = time.time()
     return _jwks_client
 
 
-@dataclass
-class Principal:
-    sub: str
-    email: str
-    name: str
-    roles: list[str] = field(default_factory=list)
-    user_id: str = ""
-    reviewer_id: str | None = None
-
-    def has(self, role: str) -> bool:
-        return role in self.roles
-
-
-def _unauthorized(detail: str) -> HTTPException:
+def _unauthorized(detail: str = "invalid or expired access token") -> HTTPException:
     return HTTPException(
         status.HTTP_401_UNAUTHORIZED,
         detail,
@@ -60,107 +41,145 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def _decode(token: str) -> dict:
-    """Validate a Keycloak JWT and return its claims."""
-    s = get_settings()
+    """Verify a Keycloak access token and return its claims."""
+    settings = get_settings()
     try:
         key = _jwks().get_signing_key_from_jwt(token).key
         return jwt.decode(
             token,
             key,
             algorithms=["RS256"],
-            issuer=s.keycloak_issuer,
-            options={"verify_aud": False},
+            audience=settings.keycloak_client_id,
+            issuer=settings.keycloak_issuer,
+            options={"require": ["exp", "iss", "sub", "aud"]},
         )
-    except jwt.ExpiredSignatureError:
-        raise _unauthorized("token expired") from None
-    except jwt.InvalidIssuerError:
-        try:
-            iss = jwt.decode(token, options={"verify_signature": False}).get("iss")
-        except jwt.PyJWTError:
-            iss = "?"
-        log.warning("issuer mismatch: token=%s expected=%s", iss, s.keycloak_issuer)
-        raise _unauthorized("invalid issuer") from None
-    except jwt.PyJWKClientConnectionError:
-        # Keycloak unreachable: a server-side problem, not a bad token
-        log.exception("cannot reach JWKS at %s", s.keycloak_jwks_url)
+    except jwt.PyJWKClientConnectionError as exc:
+        log.exception("Unable to retrieve Keycloak signing keys")
         raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "auth service unavailable"
-        ) from None
-    except jwt.PyJWTError as e:
-        log.warning("token rejected: %s", e)
-        raise _unauthorized(f"invalid token: {e}") from e
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "authentication service unavailable",
+        ) from exc
+    except jwt.PyJWKClientError as exc:
+        log.info("Could not find a Keycloak signing key for the token")
+        raise _unauthorized() from exc
+    except jwt.PyJWTError as exc:
+        log.info("Rejected Keycloak access token: %s", exc)
+        raise _unauthorized() from exc
 
 
-async def get_principal(
-    token: str ,
+def _role_from_claims(claims: dict) -> str:
+    realm_access = claims.get("realm_access")
+    realm_roles = realm_access.get("roles", []) if isinstance(realm_access, dict) else []
+    roles = set(realm_roles) if isinstance(realm_roles, list) else set()
+    if "admin" in roles:
+        return "admin"
+    if "reviewer" in roles:
+        return "reviewer"
+    return "customer"
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: AsyncSession = Depends(get_db_session),
-) -> Principal:
-    if not token:
-        log.info("auth: no bearer token on request")
+) -> User:
+    if credentials is None:
         raise _unauthorized("missing bearer token")
-        
 
-    claims = _decode(token)
-
+    claims = _decode(credentials.credentials)
     sub = claims.get("sub")
-    if not sub:
+    if not isinstance(sub, str) or not sub:
         raise _unauthorized("token has no subject")
 
-    email = claims.get("email") or claims.get("preferred_username") or f"{sub}@no-email"
-    name = claims.get("name") or claims.get("preferred_username") or email
-    roles = list(claims.get("realm_access", {}).get("roles", []))
-    app_roles = [r for r in roles if r in ("customer", "reviewer", "admin")]
-    role = "admin" if "admin" in app_roles else "reviewer" if "reviewer" in app_roles else "customer"
+    preferred_username = claims.get("preferred_username")
+    email = claims.get("email") or preferred_username or f"{sub}@no-email"
+    name = claims.get("name") or preferred_username or email
+    role = _role_from_claims(claims)
 
+    user = (
+        await session.execute(select(User).where(User.keycloak_sub == sub))
+    ).scalar_one_or_none()
     try:
-        user = (
-            await session.execute(select(User).where(User.keycloak_sub == sub))
-        ).scalar_one_or_none()
-
-        if user is None:
-            user = User(keycloak_sub=sub, email=email, name=name, role=role)
+        is_new_user = user is None
+        if is_new_user:
+            user = User(
+                keycloak_sub=sub,
+                email=email,
+                name=name,
+                role=role,
+            )
             session.add(user)
+
+        changed = is_new_user
+        if is_new_user:
             await session.flush()
-            if role in ("reviewer", "admin"):
+
+        if user.email != email:
+            user.email = email
+            changed = True
+        if user.name != name:
+            user.name = name
+            changed = True
+        if user.role != role:
+            user.role = role
+            changed = True
+
+        if role in ("reviewer", "admin"):
+            reviewer = (
+                await session.execute(
+                    select(Reviewer).where(Reviewer.user_id == user.id)
+                )
+            ).scalar_one_or_none()
+            if reviewer is None:
                 session.add(Reviewer(user_id=user.id, name=name))
-            await session.commit()
-            log.info("user.created sub=%s role=%s", sub, role)
-        elif user.role != role or user.email != email or user.name != name:
-            user.role, user.email, user.name = role, email, name
-            await session.commit()
+                changed = True
+            elif reviewer.name != name:
+                reviewer.name = name
+                changed = True
 
-        reviewer = (
-            await session.execute(select(Reviewer).where(Reviewer.user_id == user.id))
-        ).scalar_one_or_none()
-
-    except IntegrityError:
-        # Two first requests raced to create the same user; reload and continue
+        if changed:
+            await session.flush()
+            await session.commit()
+        return user
+    except IntegrityError as exc:
         await session.rollback()
+        # Another request may have provisioned this subject while this one
+        # was inserting. Do not bind a different subject through email alone.
         user = (
             await session.execute(select(User).where(User.keycloak_sub == sub))
-        ).scalar_one()
-        reviewer = (
-            await session.execute(select(Reviewer).where(Reviewer.user_id == user.id))
         ).scalar_one_or_none()
-    except Exception:
-        await session.rollback()
-        log.exception("failed to load or create user for sub=%s", sub)
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "could not load user") from None
-
-    return Principal(
-        sub=sub, email=email, name=name, roles=app_roles,
-        user_id=str(user.id), reviewer_id=str(reviewer.id) if reviewer else None,
-    )
+        if user is not None:
+            return user
+        log.info("User provisioning conflicted for subject %s", sub)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "account conflicts with an existing user",
+        ) from exc
 
 
-async def current_user(p: Principal = Depends(get_principal)) -> Principal:
-    return p
+def require_role(*allowed_roles: str):
+    async def role_dependency(
+        user: User = Depends(get_current_user),
+    ) -> User:
+        if user.role not in allowed_roles:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "insufficient permissions",
+            )
+        return user
+
+    return role_dependency
 
 
-def require_role(*allowed: str):
-    async def _dep(p: Principal = Depends(get_principal)) -> Principal:
-        if not any(p.has(r) for r in allowed):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, f"requires one of {allowed}")
-        return p
-
-    return _dep
+async def promote_to_reviewer(
+    user: User,
+    session: AsyncSession,
+) -> Reviewer:
+    user.role = "reviewer"
+    reviewer = (
+        await session.execute(select(Reviewer).where(Reviewer.user_id == user.id))
+    ).scalar_one_or_none()
+    if reviewer is None:
+        reviewer = Reviewer(user_id=user.id, name=user.name)
+        session.add(reviewer)
+    await session.flush()
+    return reviewer

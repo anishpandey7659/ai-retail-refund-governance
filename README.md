@@ -170,6 +170,12 @@ is at `http://localhost:8000/docs`; the health endpoint is
 
 Set values appropriate for your local environment. These are names and
 descriptions, not real credentials.
+The frontend uses Keycloak Authorization Code flow with PKCE; configure the
+public client in Keycloak with the frontend origin as a valid redirect/web
+origin. Copy `frontend/.env.example` to `frontend/.env.local` and set its
+values. Set the backend `KEYCLOAK_URL`, `KEYCLOAK_REALM`, and
+`KEYCLOAK_CLIENT_ID` so the URL and audience match the access tokens issued by
+your realm.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -178,16 +184,23 @@ descriptions, not real credentials.
 | `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` | Yes | Keycloak bootstrap administrator |
 | `DATABASE_URL` | Yes | SQLAlchemy/asyncpg connection URL used by the API and migrations; use the `postgresql+asyncpg` driver scheme |
 | `DATABASE_PSYCOPG_URL` | Yes for worker | Psycopg connection URL used by worker queries; use the `postgresql` driver scheme |
-| `KEYCLOAK_ISSUER` | Yes | Realm issuer URL used to validate access tokens |
-| `KEYCLOAK_JWKS_URL` | Yes | Keycloak JSON Web Key Set endpoint |
-| `KEYCLOAK_INTERNAL_URL` | Yes | Keycloak URL reachable by the backend |
-| `KEYCLOAK_CLIENT_ID` | Yes | Client ID used by the backend |
-| `KEYCLOAK_CLIENT_SECRET` | If required by client | Keycloak client secret |
+| `KEYCLOAK_URL` | Yes | Base Keycloak URL used to build the realm issuer and JWKS URL |
+| `KEYCLOAK_REALM` | Yes | Realm containing the frontend and API clients |
+| `KEYCLOAK_CLIENT_ID` | Yes | Expected access-token audience |
+| `NEXT_PUBLIC_KEYCLOAK_URL` | Yes for frontend | Keycloak base URL used for browser login |
+| `NEXT_PUBLIC_KEYCLOAK_REALM` | Yes for frontend | Realm used for browser login |
+| `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID` | Yes for frontend | Public Keycloak client configured for Authorization Code + PKCE |
 | `REDIS_URL` | Yes for backend and worker | Redis connection URL; local Compose exposes `redis://localhost:6380/0` |
 | `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET_NAME` | Yes for image operations | S3-compatible image storage; local bucket is `returnguard` |
 | `MINIO_SECURE` | No | Whether the MinIO endpoint uses HTTPS; defaults to `false` |
 | `GROQ_API_KEY`, `OPENAI_API_KEY` | As needed | Credentials for configured primary/fallback LLM providers |
 | `LLM_PROVIDER`, `LLM_MODEL` | No | Primary LLM provider and model |
+
+Run the authentication tests with:
+
+```bash
+uv run --group backend --group dev pytest test/test_auth.py
+```
 | `FALLBACK_LLM_PROVIDER`, `FALLBACK_LLM_MODEL` | No | Fallback provider and model |
 | `IMAGE_MODEL` | No | Vision model setting |
 | `QDRANT_URL`, `QDRANT_COLLECTION` | No | Policy vector database; defaults to `http://localhost:6333` and `returnguard_policies` |

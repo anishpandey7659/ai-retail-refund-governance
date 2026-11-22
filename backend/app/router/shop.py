@@ -10,11 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.schemas import ProductOut,to_out
-from backend.dependency import get_db_session          
-from backend.app.models import Product
+from backend.app.models import Product, User
+from backend.app.schemas import ProductOut, to_out
+from backend.app.security.auth import require_role
 from backend.app.services.storage import delete_object, put_bytes
-
+from backend.dependency import get_db_session
 
 shop_router = APIRouter(prefix="/products", tags=["products"])
 
@@ -34,6 +34,7 @@ async def create_product(
     price: Annotated[Decimal, Form(gt=0, max_digits=10, decimal_places=2)],
     image: UploadFile = File(...),
     stock: Annotated[int, Form(ge=0)] = 100,
+    _admin: User = Depends(require_role("admin")),
     session: AsyncSession = Depends(get_db_session),
 ):
     # 1. Validate the image

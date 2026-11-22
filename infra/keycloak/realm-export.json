@@ -32,7 +32,7 @@
       "name": "ReturnGuard Web",
       "enabled": true,
       "protocol": "openid-connect",
-      "publicClient": false,
+      "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "attributes": {
@@ -51,7 +51,20 @@
         "profile",
         "email"
       ],
-      "secret": "VsfOvtq11751C1m5YpVIMP_e6dwLBxin"
+      "protocolMappers": [
+        {
+          "name": "returnguard-backend-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "returnguard-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
     },
     {
       "clientId": "returnguard-backend",

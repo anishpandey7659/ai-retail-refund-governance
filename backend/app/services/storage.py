@@ -72,7 +72,7 @@ class PostgreSQLDatabase():
         self.session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
     async def startup(self) -> None:
-        """Connect, create missing tables, and install the audit_log trigger."""
+        """Connect, create missing tables, and install the audit_log trigger if applicable."""
         try:
             url, connect_args = _prepare_url(self.config.database_url)
 
@@ -125,9 +125,10 @@ class PostgreSQLDatabase():
                     )
                 )
 
-                # audit_log is append-only: block UPDATE and DELETE at DB level
-                for statement in AUDIT_STATEMENTS:
-                    await conn.execute(text(statement))
+                if "audit_log" in updated:
+                    # audit_log is append-only: block UPDATE and DELETE at DB level
+                    for statement in AUDIT_STATEMENTS:
+                        await conn.execute(text(statement))
 
             new_tables = updated - existing
             if new_tables:
