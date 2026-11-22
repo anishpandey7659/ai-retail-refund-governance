@@ -8,14 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.dependency import get_db_session   
-from backend.app.models import OrderItem, Outbox, Return, ReturnPhoto
+from backend.app.models import OrderItem, Outbox, Return, ReturnPhoto, User
 from backend.app.ratelimit import limiter
 from backend.app.schemas import ReturnCreateOut, ReturnOut
-from backend.app.security.auth import Principal, current_user
+from backend.app.security.auth import require_role
 from backend.app.services import mail, storage
 from backend.app.services.images import clean_image
 from backend.app.services.queue import enqueue_review
+from backend.dependency import get_db_session
 
 return_router = APIRouter(prefix="/returns", tags=["returns"])
 
@@ -39,8 +39,7 @@ def _out(r: Return, photo_urls: list[str]) -> ReturnOut:
         id=str(r.id), order_id=str(r.order_id), order_item_id=str(r.order_item_id),
         reason_code =r.reason_code,
         reason_text=r.reason_text, status=r.status,
-        amount=r.amount, ai_proposed_decision=r.ai_proposed_decision,
-        final_decision=r.final_decision,
+        amount=r.amount, ai_proposed_decision=None, final_decision=None,
         created_at=r.created_at, photo_urls=photo_urls,
     )
 
@@ -69,7 +68,7 @@ async def submit_return(
     reason_code: str = Form(...),
     reason_text: str = Form(""),
     photo: UploadFile = File(...),
-    p: Principal = Depends(current_user),
+    p: User = Depends(require_role("customer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> ReturnCreateOut:
     if reason_code not in REASON_CODES:
@@ -80,7 +79,7 @@ async def submit_return(
             select(OrderItem).options(selectinload(OrderItem.order)).where(OrderItem.id == order_item_id)
         )
     ).scalar_one_or_none()
-    if item is None or str(item.order.user_id) != p.user_id:
+    if item is None or item.order.user_id != p.id:
         raise HTTPException(404, "order item not found")
 
     dup = (
@@ -104,7 +103,7 @@ async def submit_return(
 
     amount = item.price_at_purchase * item.quantity
     r = Return(
-        id=return_id, order_id=item.order_id, order_item_id=item.id, user_id=p.user_id,
+        id=return_id, order_id=item.order_id, order_item_id=item.id, user_id=p.id,
         reason_code=reason_code,reason_text=reason_text[:2000], status="pending",
         amount=amount,
     )
@@ -131,24 +130,50 @@ async def submit_return(
 
 @return_router.get("", response_model=list[ReturnOut])
 async def my_returns(
-    p: Principal = Depends(current_user), session: AsyncSession = Depends(get_db_session)
+    p: User = Depends(require_role("customer")),
+    session: AsyncSession = Depends(get_db_session),
 ) -> list[ReturnOut]:
     rows = (
         await session.execute(
-            select(Return).where(Return.user_id == p.user_id).order_by(Return.created_at.desc())
+            select(Return)
+            .where(Return.user_id == p.id)
+            .order_by(Return.created_at.desc())
         )
     ).scalars().all()
     return [_out(r, await _photo_urls(session, r.id)) for r in rows]
 
 
-@return_router.get("/{return_id}", response_model=ReturnOut)
-async def get_return(
+@return_router.get("/review", response_model=list[ReturnOut])
+async def review_returns(
+    _: User = Depends(require_role("admin", "reviewer")),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[ReturnOut]:
+    rows = (
+        await session.execute(select(Return).order_by(Return.created_at.desc()))
+    ).scalars().all()
+    return [_out(r, await _photo_urls(session, r.id)) for r in rows]
+
+
+@return_router.get("/review/{return_id}", response_model=ReturnOut)
+async def get_return_for_review(
     return_id: str,
-    p: Principal = Depends(current_user),
+    _: User = Depends(require_role("admin", "reviewer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> ReturnOut:
     r = await session.get(Return, return_id)
-    if r is None or str(r.user_id) != p.user_id:
+    if r is None:
+        raise HTTPException(404, "return not found")
+    return _out(r, await _photo_urls(session, r.id))
+
+
+@return_router.get("/{return_id}", response_model=ReturnOut)
+async def get_return(
+    return_id: str,
+    p: User = Depends(require_role("customer")),
+    session: AsyncSession = Depends(get_db_session),
+) -> ReturnOut:
+    r = await session.get(Return, return_id)
+    if r is None or r.user_id != p.id:
         raise HTTPException(404, "return not found")
     return _out(r, await _photo_urls(session, r.id))
 
@@ -156,7 +181,7 @@ async def get_return(
 @return_router.get("/{return_id}/info-request")
 async def open_info_request(
     return_id: str,
-    p: Principal = Depends(current_user),
+    p: User = Depends(require_role("customer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     from sqlalchemy import text
@@ -165,7 +190,7 @@ async def open_info_request(
         "SELECT i.id::text, i.question FROM info_requests i JOIN returns r ON r.id=i.return_id "
         "WHERE i.return_id=:r AND i.answered_at IS NULL AND r.user_id=:u "
         "ORDER BY i.created_at DESC LIMIT 1"),
-        {"r": return_id, "u": p.user_id})).mappings().one_or_none()
+        {"r": return_id, "u": p.id})).mappings().one_or_none()
     return dict(row) if row else {}
 
 
@@ -173,18 +198,17 @@ async def open_info_request(
 async def answer_info_request(
     return_id: str,
     answer: str = Form(...),
-    p: Principal = Depends(current_user),
+    p: User = Depends(require_role("customer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    from sqlalchemy import text
-
     from app.services.queue import enqueue_review
+    from sqlalchemy import text
 
     upd = (await session.execute(text(
         "UPDATE info_requests SET answer=:a, answered_at=now() "
         "WHERE return_id=:r AND answered_at IS NULL "
         "AND return_id IN (SELECT id FROM returns WHERE user_id=:u) RETURNING id"),
-        {"a": answer[:2000], "r": return_id, "u": p.user_id})).first()
+        {"a": answer[:2000], "r": return_id, "u": p.id})).first()
     if not upd:
         raise HTTPException(404, "no open info request")
     await session.execute(text(
