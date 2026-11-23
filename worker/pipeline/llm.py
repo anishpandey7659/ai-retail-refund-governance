@@ -2,17 +2,18 @@ from functools import lru_cache
 
 from langchain.chat_models import init_chat_model
 from langchain_core.runnables import Runnable
-
 from worker.pipeline.config import get_settings
-from worker.pipeline.nodes.base import IntakeVerdict
 
-
-
+from typing import TypeVar, cast
+from pydantic import BaseModel
+from langchain_core.language_models import LanguageModelInput
+OutputT = TypeVar("OutputT", bound=BaseModel)
 
 @lru_cache(maxsize=4)
 def init_chat(
+    schema: type[OutputT],
     temperature: float = 0.0,
-) -> Runnable:
+) -> Runnable[LanguageModelInput, OutputT]:
     settings = get_settings()
 
     api_keys = {
@@ -25,16 +26,17 @@ def init_chat(
         model_provider=settings.llm_provider,
         api_key=api_keys[settings.llm_provider.lower()],
         temperature=temperature,
-    )
+    ).with_structured_output(schema)
 
     fallback_llm = init_chat_model(
         model=settings.fallback_llm_model,
         model_provider=settings.fallback_llm_provider,
         api_key=api_keys[settings.fallback_llm_provider.lower()],
         temperature=temperature,
-    )
+    ).with_structured_output(schema)
 
-    return primary_llm.with_fallbacks([fallback_llm])
+    chain = primary_llm.with_fallbacks([fallback_llm])
+    return cast(Runnable[LanguageModelInput, OutputT], chain)
 
 
 @lru_cache(maxsize=4)

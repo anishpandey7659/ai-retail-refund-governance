@@ -16,7 +16,6 @@ from worker.pipeline.nodes.agent_helpers import (
     _build_explanation_input,
     _decision_failure_fallback,
     _explanation_failure_fallback,
-    _parse_llm_output,
     _record_result,
     _validate_decision_proposal,
 )
@@ -86,8 +85,8 @@ async def intake(case: base.Case) -> base.IntakeResult:
     from worker.pipeline.prompts.intake import PROMPT, intake_vars
 
     prompt = PROMPT.format(**intake_vars(case))
-    result = init_chat().invoke(prompt)
-    return _parse_llm_output(result, base.IntakeResult)
+    result = init_chat(base.IntakeResult).invoke(prompt)
+    return result
 
 
 @_record_result("policy")
@@ -122,8 +121,8 @@ async def policy(case: base.Case) -> base.PolicyResult:
     )
     inputs = policy_vars(case)
     inputs["retrive_chunks"] = policy_context
-    response = init_chat().invoke(PROMPT.invoke(inputs))
-    return _parse_llm_output(response, base.PolicyResult)
+    response = init_chat(base.PolicyResult).invoke(PROMPT.invoke(inputs))
+    return response
 
 
 @_record_result("image")
@@ -196,7 +195,7 @@ async def behavior(case: base.Case) -> base.BehaviorResult:
     if not 0 <= risk_score <= 1:
         raise ValueError(f"Calculated risk score is out of range: {risk_score}")
 
-    response = init_chat().invoke(
+    response = init_chat(base.BehaviorResult).invoke(
         PROMPT.format(
             risk_score=f"{risk_score:.4f}",
             predicted_class=prediction["predicted_class"],
@@ -231,8 +230,7 @@ async def decision(case: base.Case) -> base.DecisionProposal:
         decision_input=decision_input.model_dump_json(indent=2)
     )
     try:
-        response = await asyncio.to_thread(init_chat().invoke, prompt)
-        llm_proposal = _parse_llm_output(response, base.DecisionProposal)
+        llm_proposal = await asyncio.to_thread(init_chat(base.DecisionProposal).invoke, prompt)
     except Exception:
         logger.exception(
             "Decision Agent failed; returning a human-review fallback",
@@ -260,8 +258,7 @@ async def explanation(case: base.Case) -> base.ExplanationResult:
         explanation_input=explanation_input.model_dump_json(indent=2)
     )
     try:
-        response = await asyncio.to_thread(init_chat().invoke, prompt)
-        result = _parse_llm_output(response, base.ExplanationResult)
+        result = await asyncio.to_thread(init_chat(base.ExplanationResult).invoke, prompt)
         message = " ".join(result.message.split())
         restricted_phrases = (
             "risk score",

@@ -107,8 +107,6 @@ def _record_result(
                     model=model,
                     prompt_version=prompt_version,
                 )
-                if agent_name == "gate" and isinstance(output, base.GateResult):
-                    case.gate_result = output
                 logger.info(
                     "Agent execution completed",
                     extra={
@@ -122,15 +120,6 @@ def _record_result(
         return run
 
     return decorate
-
-
-def _parse_llm_output[OutputT: base.AgentOutput](
-    response: Any, schema: type[OutputT]
-) -> OutputT:
-    content = response.content
-    if not isinstance(content, str):
-        raise TypeError("Agent returned non-text content; expected a JSON object.")
-    return schema.model_validate_json(content)
 
 
 @lru_cache(maxsize=1)
@@ -169,17 +158,10 @@ def _build_decision_input(case: base.Case) -> base.DecisionInput:
     policy_result = _recorded_output(case, "policy", base.PolicyResult)
     image_result = _recorded_output(case, "image", base.ImageResult)
     behavior_result = _recorded_output(case, "behavior", base.BehaviorResult)
-    gate_result = _recorded_output(case, "gate", base.GateResult) or case.gate_result
+    gate_result = _recorded_output(case, "gate", base.GateResult)
     planner_result = _recorded_output(case, "planner", base.PlannerResult)
     features = behavior_result.features if behavior_result else {}
 
-    linked_accounts_value = features.get("linked_accounts")
-    linked_accounts = (
-        int(linked_accounts_value)
-        if isinstance(linked_accounts_value, (int, float))
-        and not isinstance(linked_accounts_value, bool)
-        else None
-    )
     ring_linked = any(
         _has_positive_signal(features.get(key))
         for key in (
@@ -190,7 +172,6 @@ def _build_decision_input(case: base.Case) -> base.DecisionInput:
             "ring_linked",
         )
     )
-    ring_linked = ring_linked or _has_positive_signal(features.get("shared"))
 
     history_requires_behavior = (
         case.customer_history.returns >= base.MIN_PRIOR_RETURNS
@@ -228,7 +209,6 @@ def _build_decision_input(case: base.Case) -> base.DecisionInput:
             prior_returns=case.customer_history.returns,
             prior_denials=case.customer_history.denied,
             ring_linked=ring_linked,
-            linked_accounts=linked_accounts,
         ),
     )
 

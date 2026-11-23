@@ -258,7 +258,6 @@ class Case(BaseModel):
 
     # Pipeline state
     status: CaseStatus = "pending"
-    gate_result: Optional[GateResult] = None
 
     # Agent execution results
     agent_results: dict[str, AgentResult] = Field(default_factory=dict)
