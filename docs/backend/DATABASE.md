@@ -33,7 +33,7 @@
 - **`return_photos`**: Uploaded evidence images.
   - Columns: `id` (UUID PK), `return_id` (FK `returns.id` cascade), `object_key`, `content_type`, `bytes`, `sha256`.
 - **`return_refunds`**: Monetary disbursement records.
-  - Columns: `id` (UUID PK), `return_id` (FK `returns.id`), `amount`, `status` (`pending`, `succeeded`, `failed`), `provider_refund_id`, `error`, `created_at`, `processed_at`.
+  - Columns: `id` (UUID PK), `return_id` (FK `returns.id`), `amount`, `status` (`pending`, `succeeded`, `failed`), `provider_refund_id`, `destination_fingerprint` (String 64), `error`, `created_at`, `processed_at`.
   - Unique Constraint: `uq_one_success_refund` prevents double refunds on a single return.
 
 ### 4. Risk & Infrastructure

@@ -207,6 +207,11 @@ class ReturnRefund(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
 
     provider_refund_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    destination_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="Keyed payment-provider fingerprint for refund destination account",
+    )
     error: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[dt.datetime] = mapped_column(
