@@ -6,6 +6,7 @@
 - **Entry point**: `worker/pipeline/workers.py:WorkerSettings`. Run via `make worker` or `uv run arq worker.pipeline.workers.WorkerSettings`.
 - **Registered job**: `review_return(ctx: dict, return_id: str)` in `worker/pipeline/jobs.py`.
 - **DB Connection**: Async `psycopg 3` pool initialized during ARQ startup (`worker/pipeline/db.py`). Uses raw SQL in `worker/pipeline/query.py`.
+- **Customer email**: When automatic review is enabled, `review_return` sends the review message using `backend.app.services.mail.send` and the customer email loaded with the return context. Human-review cases do not receive an automated decision email.
 - **Tracing**: Langfuse integration in `worker/pipeline/tracing.py`. Enabled if `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are provided.
 
 ## Workflow Sequence (`worker/pipeline/workflow.py`)

@@ -126,6 +126,15 @@ async def load_ml_context(return_id: str) -> dict:
         if context.get(field) is not None:
             context[field] = int(context[field])
 
+    for field in (
+        "item_returned_opened",
+        "multiple_accounts_flag",
+        "refund_to_different_account",
+        "address_change_before_delivery",
+    ):
+        if context.get(field) is not None:
+            context[field] = int(context[field])
+
     return context
 
 from psycopg.types.json import Jsonb
@@ -228,3 +237,21 @@ def is_kill_switch_on() -> bool:
     if value is None:
         return True  # fail safe: default to human review
     return value
+
+def human_review_message(return_id: str) -> str:
+    return f"""
+A return request requires human review.
+
+Return ID: {return_id}
+
+The automated review process has routed this return
+for manual assessment.
+
+Please review the AI assessment, agent results,
+and supporting evidence in the ReturnGuard dashboard.
+
+Required action:
+Approve or reject the return after reviewing the case.
+
+— ReturnGuard
+"""

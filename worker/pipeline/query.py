@@ -1,8 +1,17 @@
+RETURN_REVIEW_UPDATE_QUERY = """
+    UPDATE returns
+    SET ai_result = %(ai_result)s, status = %(status)s
+    WHERE id = %(return_id)s::uuid
+    RETURNING id
+"""
+
+
 RETURN_QUERY = """
     SELECT
         r.id::text            AS return_id,
-        r.order_id::text      AS order_id,
+        r.order_id            AS order_id,
         r.user_id::text       AS customer_id,
+        u.email               AS customer_email,
         COALESCE(
             (
                 SELECT JSON_AGG(
@@ -19,18 +28,15 @@ RETURN_QUERY = """
             '[]'::json
         )                     AS photos,
 
-        -- Customer history (prior returns only; excludes this one)
-        (
-            SELECT JSON_BUILD_OBJECT(
-                'orders',   (SELECT count(*) FROM orders o WHERE o.user_id = r.user_id),
-                'returns',  count(*),
-                'denied',   count(*) FILTER (WHERE h.final_decision = 'deny'),
-                'approved', count(*) FILTER (WHERE h.final_decision = 'approve')
-            )
-            FROM returns h
-            WHERE h.user_id = r.user_id
-              AND h.id <> r.id
+        -- Customer history JSON: orders + returns counts (prior only; excludes this one)
+        JSON_BUILD_OBJECT(
+            'orders',  hist.orders_count,
+            'returns', hist.returns_count
         )                     AS customer_history,
+
+        -- Exposed as separate top-level columns so build_case() can read them directly
+        hist.approved_count   AS approved,
+        hist.denied_count     AS denied,
 
         r.created_at,
         o.delivered_at,
@@ -38,7 +44,7 @@ RETURN_QUERY = """
         r.reason_text,
         r.amount,
         r.status,
-        oi.id::text           AS order_item_id,
+        oi.id                 AS order_item_id,
         oi.product_id::text   AS product_id,
         oi.quantity,
         oi.price_at_purchase,
@@ -49,6 +55,8 @@ RETURN_QUERY = """
         p.price               AS current_product_price,
         p.image_key           AS product_image_key
     FROM returns r
+    JOIN users u
+        ON u.id = r.user_id
     JOIN orders o
         ON o.id = r.order_id
     JOIN order_items oi
@@ -56,6 +64,21 @@ RETURN_QUERY = """
        AND oi.order_id = r.order_id
     LEFT JOIN products p
         ON p.id = oi.product_id
+    -- Single lateral scan replaces three separate correlated subqueries
+    CROSS JOIN LATERAL (
+        SELECT
+            (
+                SELECT count(*)
+                FROM orders o2
+                WHERE o2.user_id = r.user_id
+            )                                               AS orders_count,
+            count(*)                                        AS returns_count,
+            count(*) FILTER (WHERE h.status = 'approved')  AS approved_count,
+            count(*) FILTER (WHERE h.status = 'denied')    AS denied_count
+        FROM returns h
+        WHERE h.user_id = r.user_id
+          AND h.id <> r.id
+    ) AS hist
     WHERE r.id = %(return_id)s::uuid
 """
 
@@ -69,10 +92,10 @@ ML_CONTEXT_QUERY = """
             r.created_at AS return_created_at,
             r.amount,
             r.reason_code,
+            r.item_opened,
             o.created_at AS order_created_at,
             o.delivered_at,
-            to_jsonb(o) ->> 'payment_method_fingerprint'
-                AS order_payment_fingerprint
+            o.payment_method_fingerprint AS order_payment_fingerprint
         FROM returns r
         JOIN orders o ON o.id = r.order_id
         WHERE r.id = %(return_id)s::uuid
@@ -96,7 +119,7 @@ ML_CONTEXT_QUERY = """
             ELSE NULL
         END AS refund_to_order_ratio,
         appeals.previous_dispute_count,
-        inspection.item_opened AS item_returned_opened,
+        target.item_opened AS item_returned_opened,
         fingerprints.multiple_accounts_flag,
         CASE
             WHEN target.order_payment_fingerprint IS NULL
@@ -115,7 +138,6 @@ ML_CONTEXT_QUERY = """
                 WHERE ac.order_id = target.order_id
                   AND ac.changed_at >= target.order_created_at
                   AND ac.changed_at <= target.delivered_at
-                  AND ac.changed_at <= target.return_created_at
             )
         END AS address_change_before_delivery
     FROM target
@@ -133,7 +155,6 @@ ML_CONTEXT_QUERY = """
                 FROM returns h
                 JOIN orders ho ON ho.id = h.order_id
                 WHERE h.user_id = target.user_id
-                  AND h.created_at < target.return_created_at
                   AND ho.created_at < target.order_created_at
             ) AS returned_item_count,
             (
@@ -143,7 +164,7 @@ ML_CONTEXT_QUERY = """
                   AND o.created_at < target.order_created_at
             ) AS order_total,
             (
-                SELECT sum(rf.amount)
+                SELECT COALESCE(sum(rf.amount), 0)
                 FROM return_refunds rf
                 JOIN returns hr ON hr.id = rf.return_id
                 JOIN orders ho ON ho.id = hr.order_id
@@ -162,24 +183,25 @@ ML_CONTEXT_QUERY = """
     ) AS support
     CROSS JOIN LATERAL (
         SELECT count(*)::integer AS previous_dispute_count
-        FROM appeals a
-        WHERE a.user_id = target.user_id
-          AND a.created_at < target.return_created_at
+        FROM returns h
+        WHERE h.user_id = target.user_id
+          AND h.created_at < target.return_created_at
+          AND h.status IN ('denied', 'escalated')
     ) AS appeals
     CROSS JOIN LATERAL (
         SELECT CASE
-            WHEN count(own.id) = 0 THEN NULL
-            ELSE bool_or(other.user_id IS NOT NULL)
+            WHEN NOT EXISTS (SELECT 1 FROM fingerprints WHERE user_id = target.user_id) THEN NULL
+            ELSE EXISTS (
+                SELECT 1
+                FROM fingerprints own
+                JOIN fingerprints other
+                  ON other.fingerprint_type = own.fingerprint_type
+                 AND other.fingerprint_hash = own.fingerprint_hash
+                 AND other.user_id <> target.user_id
+                WHERE own.user_id = target.user_id
+            )
         END AS multiple_accounts_flag
-        FROM fingerprints own
-        LEFT JOIN fingerprints other
-          ON other.fingerprint_type = own.fingerprint_type
-         AND other.fingerprint_hash = own.fingerprint_hash
-         AND other.user_id <> target.user_id
-        WHERE own.user_id = target.user_id
     ) AS fingerprints
-    LEFT JOIN return_inspections inspection
-      ON inspection.return_id = target.return_id
     LEFT JOIN LATERAL (
         SELECT rf.destination_fingerprint
         FROM return_refunds rf

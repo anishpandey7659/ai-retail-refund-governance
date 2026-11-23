@@ -1,7 +1,11 @@
 import asyncio
 
-from worker.pipeline import db, helper
+from psycopg.types.json import Jsonb
+
+from backend.app.services import mail
+from worker.pipeline import dependency, db, helper
 from worker.pipeline.logger import configure_logging, get_logger
+from worker.pipeline.query import RETURN_REVIEW_UPDATE_QUERY
 from worker.pipeline.sample_case import case
 from worker.pipeline.workflow import run_workflow
 
@@ -33,43 +37,45 @@ async def review_return(ctx: dict, return_id: str):
     result = await run_workflow(case)
     result_case = result["case"]
 
+    kill_switch_on = helper.is_kill_switch_on()
+    status = "in_review" if kill_switch_on else result_case.status
+
+    rows = await db._rows(
+        RETURN_REVIEW_UPDATE_QUERY,
+        {
+            "ai_result": Jsonb(
+                result_case.model_dump(mode="json")["agent_results"]
+            ),
+            "status": status,
+            "return_id": return_id,
+        },
+    )
+    if not rows:
+        logger.error(
+            "Could not persist return review results",
+            extra={"return_id": return_id},
+        )
+        raise RuntimeError(f"Could not update return {return_id}.")
+
     # Kill switch ON -> always human review
-    if helper.is_kill_switch_on():
-        queued = await helper.add_to_queue(
-            ctx.get("db_pool"), return_id, result_case
-        )
+    if kill_switch_on:
         logger.info(
-            "Return sent to human review",
-            extra={"return_id": return_id, "queue_new": queued},
+            "Kill switch is ON, forcing human review",
+            extra={"return_id": return_id},
         )
+        human_review_message = helper.human_review_message(return_id)
+        dependency.notify_reviewer(context["customer_email"], f"Action Required: Return {return_id} Needs Review", human_review_message)
         return {"status": "pending_human_review", "return_id": return_id}
 
-    # Kill switch OFF -> automatic
-    if result_case.status == "approved":
-        process_return(return_id)
-        status = "approved"
-    else:
-        status = "not_approved"
 
     message = helper.customer_message(result)
-    notify_user(return_id, message)
+    dependency.notify_reviewer(context["customer_email"], "Your return request has been reviewed", message)
     logger.info(
         "Return review completed",
         extra={"return_id": return_id, "final_status": result_case.status},
     )
     return {"status": status, "return_id": return_id}
 
-
-# ---- Demo stubs (replace later) ----
-def process_return(return_id: str):
-    logger.info("Processing approved return", extra={"return_id": return_id})
-
-
-def notify_user(return_id: str, message: str):
-    logger.info(
-        "Customer notification generated",
-        extra={"return_id": return_id, "message_length": len(message)},
-    )
 
 
 async def main():

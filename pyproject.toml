@@ -49,6 +49,7 @@ mcp_server = [
 
 worker = [
     "arq>=0.28.0",
+    "asgi-correlation-id>=5.0.1",
     "boto3>=1.43.123",
     "pydantic>=2.10.0",
     "psycopg[binary,pool]>=3.3.6",
@@ -65,6 +66,7 @@ worker = [
     "catboost>=1.2.10",
     "python-dotenv>=1.0.1",
     "langfuse>=4.7.0,<5.0.0",
+    "structlog>=26.1.0",
 ]
 
 [[tool.uv.index]]
