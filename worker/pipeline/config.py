@@ -1,6 +1,8 @@
 from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Literal
+
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -24,6 +26,10 @@ class Settings(BaseSettings):
     fallback_llm_model: str = "gpt-4o-mini"
 
     image_model: str = "gpt-4o"
+
+    llm_mode: Literal["mock", "replay", "live"] = "live"
+    llm_scenario: str = "low_risk"
+    llm_replay_file: str | None = None
 
     human_review_kill_switch:bool =True
 

@@ -23,18 +23,18 @@ stop:
 down:
 	docker compose down
 
-# run: check
-# 	@echo "Starting FastAPI and ARQ worker..."
-# 	@set -m; \
-# 	uv run uvicorn backend.main:app --reload & \
-# 	API_PID=$$!; \
-# 	uv run arq worker.pipeline.workers.WorkerSettings & \
-# 	WORKER_PID=$$!; \
-# 	trap 'kill $$API_PID $$WORKER_PID 2>/dev/null; wait' EXIT INT TERM; \
-# 	wait
-
 run: check
-	uv run uvicorn backend.main:app --reload
+	@echo "Starting FastAPI and ARQ worker..."
+	@set -m; \
+	uv run uvicorn backend.main:app --reload & \
+	API_PID=$$!; \
+	uv run arq worker.pipeline.workers.WorkerSettings & \
+	WORKER_PID=$$!; \
+	trap 'kill $$API_PID $$WORKER_PID 2>/dev/null; wait' EXIT INT TERM; \
+	wait
+
+# run: check
+# 	uv run uvicorn backend.main:app --reload
 
 worker: check
 	uv run arq worker.pipeline.workers.WorkerSettings
