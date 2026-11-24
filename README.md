@@ -97,6 +97,25 @@ are recorded; the workflow continues so the decision can safely account for
 missing evidence. The policy and intake short-circuits above apply to returned
 agent results, not agent exceptions.
 
+### Review dashboard and AI decision interface
+
+The web interface provides an interactive review console for reviewers and administrators to monitor return requests and inspect the AI governance pipeline in real time.
+
+#### Return Review Dashboard
+The return review interface displays all submitted return requests with quick-filtering by status, search by order or return reason, and key status metrics (total requests, awaiting review, and resolved). Reviewers can select any return record to inspect customer details, order items, reason codes, and uploaded evidence photos.
+
+![Return Review Interface](assets/return_review.png)
+
+#### AI Proposed Decision
+When the multi-agent pipeline reviews a return request requiring human oversight or escalation, it generates an AI proposed decision. The interface presents the recommended outcome (e.g., escalate, approve, deny), confidence metrics, behavior and risk scoring, triggered policy rules, customer-facing explanations, and step-by-step pipeline execution traces.
+
+![AI Proposed Decision](assets/ai_proposed.png)
+
+#### Auto-Approved Return Mode
+For return requests that meet policy criteria, pass image verification, and display low behavioral risk without requiring manual intervention, the AI pipeline issues an auto-approval recommendation. The dashboard highlights deterministic policy compliance, customer reasoning, and complete audit trails for safe automation.
+
+![Auto-Approved Return](assets/Auto-approve.png)
+
 ## Repository layout
 
 | Path | Purpose |
