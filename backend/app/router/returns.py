@@ -39,7 +39,11 @@ def _out(r: Return, photo_urls: list[str]) -> ReturnOut:
         id=str(r.id), order_id=str(r.order_id), order_item_id=str(r.order_item_id),
         reason_code =r.reason_code,
         reason_text=r.reason_text, status=r.status,
-        amount=r.amount, ai_proposed_decision=None, final_decision=None,
+        amount=r.amount,
+        # Expose the full JSONB pipeline output so the reviewer UI can render
+        # each agent's result. final_decision has no endpoint yet.
+        agent_results=r.ai_result,
+        final_decision=None,
         created_at=r.created_at, photo_urls=photo_urls,
     )
 

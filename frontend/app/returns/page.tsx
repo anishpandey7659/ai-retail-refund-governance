@@ -5,6 +5,8 @@ import { AlertCircle, Search } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable } from "@/components/ui/DataTable";
+import { ReturnDetailsCard } from "@/components/returns/ReturnDetailsCard";
+import { AiDecisionCard } from "@/components/returns/ai-decision/AiDecisionCard";
 import { useAppData } from "@/context/app-context";
 import type { BackendReturn } from "@/lib/retail-api";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -225,89 +227,24 @@ export default function ReturnReviewPage() {
         </DataTable>
 
         {(isLoadingDetails || detailsError || selectedReturn) && (
-          <section
-            aria-live="polite"
-            className="rounded-2xl border border-[#E8E6E1] bg-white p-5"
-          >
+          <div aria-live="polite" className="space-y-6">
             {isLoadingDetails && (
-              <p className="text-sm text-[#77746E]">Loading return details...</p>
+              <section className="rounded-2xl border border-[#E8E6E1] bg-white p-6 shadow-sm">
+                <p className="text-sm text-[#77746E]">Loading return details...</p>
+              </section>
             )}
             {detailsError && (
-              <p role="alert" className="text-sm text-[#783D31]">
+              <section className="rounded-2xl border border-[#E1B8B0] bg-[#FBEBE8] p-4 text-sm text-[#783D31]">
                 Could not load return details: {detailsError}
-              </p>
+              </section>
             )}
             {selectedReturn && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#77746E]">
-                      Return details
-                    </p>
-                    <h2 className="mt-1 break-all text-lg font-semibold">
-                      {selectedReturn.id}
-                    </h2>
-                  </div>
-                  <Badge status={displayStatus(selectedReturn.status)} />
-                </div>
-                <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    ["Order ID", selectedReturn.order_id],
-                    ["Order item", selectedReturn.order_item_id],
-                    [
-                      "Reason",
-                      selectedReturn.reason_code.replaceAll("_", " "),
-                    ],
-                    [
-                      "Amount",
-                      formatMoney(Number(selectedReturn.amount)),
-                    ],
-                    [
-                      "AI proposed decision",
-                      selectedReturn.ai_proposed_decision ?? "Not available",
-                    ],
-                    [
-                      "Final decision",
-                      selectedReturn.final_decision ?? "Not available",
-                    ],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#77746E]">
-                        {label}
-                      </dt>
-                      <dd className="mt-1 break-words text-sm text-[#252525]">
-                        {value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-                <div>
-                  <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#77746E]">
-                    Customer explanation
-                  </h3>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-[#443F3A]">
-                    {selectedReturn.reason_text ||
-                      "No additional explanation provided."}
-                  </p>
-                </div>
-                {selectedReturn.photo_urls.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedReturn.photo_urls.map((url, index) => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-lg border border-[#E8E6E1] px-3 py-2 text-xs font-medium text-[#555048] hover:text-[#252525]"
-                      >
-                        View evidence {index + 1}
-                      </a>
-                    ))}
-                  </div>
-                )}
+              <div className="space-y-6">
+                <ReturnDetailsCard returnRecord={selectedReturn} />
+                <AiDecisionCard returnRecord={selectedReturn} />
               </div>
             )}
-          </section>
+          </div>
         )}
       </div>
     </AppShell>

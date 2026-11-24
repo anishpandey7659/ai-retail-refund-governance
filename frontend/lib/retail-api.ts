@@ -49,7 +49,10 @@ export interface BackendReturn {
   reason_text: string;
   status: string;
   amount: number | string;
-  ai_proposed_decision: string | null;
+  // agent_results: full pipeline output dict[agent_name, AgentResult] from the worker.
+  // Replaces the old ai_proposed_decision: string field. See types in
+  // frontend/components/returns/ai-decision/types.ts for the shape.
+  agent_results: Record<string, unknown> | null;
   final_decision: string | null;
   created_at: string;
   photo_urls: string[];

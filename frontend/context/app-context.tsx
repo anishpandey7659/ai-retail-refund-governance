@@ -224,7 +224,11 @@ function mapReturns(
       description: item.reason_text,
       submissionDate: item.created_at,
       reviewStatus,
-      aiProposedDecision: item.ai_proposed_decision,
+      // agent_results is the structured pipeline data used by the reviewer page.
+      // The customer-facing refunds page doesn't need it, so aiProposedDecision
+      // is set to null here (it was previously derived from ai_proposed_decision
+      // which no longer exists on the API response).
+      aiProposedDecision: null,
       finalDecision: item.final_decision,
       photoUrls: item.photo_urls,
     };

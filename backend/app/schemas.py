@@ -77,7 +77,10 @@ class ReturnOut(BaseModel):
     reason_text: str
     status: str
     amount: Decimal
-    ai_proposed_decision: str | None
+    # agent_results: full pipeline output from worker (dict[str, AgentResult] JSONB).
+    # Replaces the old ai_proposed_decision string field — the full structured data
+    # is now surfaced so the reviewer UI can display each agent's output.
+    agent_results: dict | None = None
     final_decision: str | None
     created_at: dt.datetime
     photo_urls: list[str] = []

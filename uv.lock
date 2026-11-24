@@ -1318,8 +1318,8 @@ name = "httpcore2"
 version = "2.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c0/61/afa9d6b7452f9eca73f73d45324eb0bb52f098fd5e6049bf6b8263be9b4e/httpcore2-2.16.0.tar.gz", hash = "sha256:c72cd0413563b17e1cd8354677dff887466f8ec2551679759e93126534428643", size = 69886, upload-time = "2026-10-21T07:09:45.31Z" }
 wheels = [
@@ -3574,6 +3574,7 @@ mcp-server = [
 ]
 worker = [
     { name = "arq" },
+    { name = "asgi-correlation-id" },
     { name = "boto3" },
     { name = "catboost" },
     { name = "langchain" },
@@ -3588,6 +3589,7 @@ worker = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "redis" },
+    { name = "structlog" },
     { name = "torch", version = "2.15.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
     { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
     { name = "transformers" },
@@ -3631,6 +3633,7 @@ mcp-server = [
 ]
 worker = [
     { name = "arq", specifier = ">=0.28.0" },
+    { name = "asgi-correlation-id", specifier = ">=5.0.1" },
     { name = "boto3", specifier = ">=1.43.123" },
     { name = "catboost", specifier = ">=1.2.10" },
     { name = "langchain", specifier = ">=1.4.8" },
@@ -3645,6 +3648,7 @@ worker = [
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "redis", specifier = ">=5.3.1" },
+    { name = "structlog", specifier = ">=26.1.0" },
     { name = "torch", specifier = ">=2.2.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "transformers", specifier = ">=4.48.0" },
 ]
