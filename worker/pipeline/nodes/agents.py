@@ -19,6 +19,7 @@ from worker.pipeline.nodes.agent_helpers import (
     _record_result,
     _validate_decision_proposal,
 )
+from worker.pipeline.tracing import set_observation_input
 
 logger = get_logger(__name__)
 
@@ -59,17 +60,8 @@ async def planner(case: base.Case) -> base.PlannerResult:
         skipped.append("image")
         reasons.append("no photo, skip image")
 
-    history = case.customer_history
-    if history.returns >= base.MIN_PRIOR_RETURNS or history.denied > 0:
-        steps.append("behavior")
-        reasons.append(
-            f"{history.returns} prior returns "
-            f"({history.denied} denied, rate {history.return_rate:.0%}), "
-            "run behavior check"
-        )
-    else:
-        skipped.append("behavior")
-        reasons.append("no prior returns, skip behavior")
+    steps.append("behavior")
+    reasons.append("run behavior check for every return")
 
     steps.extend(["decision", "critic", "explanation"])
     return base.PlannerResult(
@@ -85,7 +77,8 @@ async def intake(case: base.Case) -> base.IntakeResult:
     from worker.pipeline.prompts.intake import PROMPT, intake_vars
 
     prompt = PROMPT.format(**intake_vars(case))
-    result = init_chat(base.IntakeResult).invoke(prompt)
+    set_observation_input(prompt)
+    result = init_chat(base.IntakeResult, agent="intake").invoke(prompt)
     return result
 
 
@@ -121,7 +114,9 @@ async def policy(case: base.Case) -> base.PolicyResult:
     )
     inputs = policy_vars(case)
     inputs["retrive_chunks"] = policy_context
-    response = init_chat(base.PolicyResult).invoke(PROMPT.invoke(inputs))
+    prompt = PROMPT.invoke(inputs)
+    set_observation_input(prompt.to_string())
+    response = init_chat(base.PolicyResult, agent="policy").invoke(prompt)
     return response
 
 
@@ -163,15 +158,13 @@ async def behavior(case: base.Case) -> base.BehaviorResult:
     if missing_features:
         raise ValueError(f"ML context is missing model features: {missing_features}")
 
-    unavailable_features = [name for name in feature_names if context[name] is None]
-    if unavailable_features:
-        raise ValueError(
-            f"Cannot score return {case.case_id}; these features are unavailable: "
-            f"{unavailable_features}"
-        )
+    normalized_context = dict(context)
+    for name in feature_names:
+        if normalized_context[name] is None:
+            normalized_context[name] = "" if name == "return_reason" else 0
 
     features = pd.DataFrame(
-        [{name: context[name] for name in feature_names}],
+        [{name: normalized_context[name] for name in feature_names}],
         columns=feature_names,
     )
     predictions = risk_probability(model=model, X=features)
@@ -195,15 +188,15 @@ async def behavior(case: base.Case) -> base.BehaviorResult:
     if not 0 <= risk_score <= 1:
         raise ValueError(f"Calculated risk score is out of range: {risk_score}")
 
-    response = init_chat(base.BehaviorResult).invoke(
-        PROMPT.format(
-            risk_score=f"{risk_score:.4f}",
-            predicted_class=prediction["predicted_class"],
-            probabilities_json=json.dumps(probabilities, sort_keys=True),
-            features_json=json.dumps(context, sort_keys=True, default=str),
-        )
+    prompt = PROMPT.format(
+        risk_score=f"{risk_score:.4f}",
+        predicted_class=prediction["predicted_class"],
+        probabilities_json=json.dumps(probabilities, sort_keys=True),
+        features_json=json.dumps(context, sort_keys=True, default=str),
     )
-    summary = response.content
+    set_observation_input(prompt)
+    response = init_chat(base.ExplanationResult, agent="behavior").invoke(prompt)
+    summary = response.message
     if not isinstance(summary, str) or not summary.strip():
         raise TypeError("Behavior explanation LLM returned no plain-text summary.")
 
@@ -229,8 +222,11 @@ async def decision(case: base.Case) -> base.DecisionProposal:
     prompt = PROMPT.format(
         decision_input=decision_input.model_dump_json(indent=2)
     )
+    set_observation_input(prompt)
     try:
-        llm_proposal = await asyncio.to_thread(init_chat(base.DecisionProposal).invoke, prompt)
+        llm_proposal = await asyncio.to_thread(
+            init_chat(base.DecisionProposal, agent="decision").invoke, prompt
+        )
     except Exception:
         logger.exception(
             "Decision Agent failed; returning a human-review fallback",
@@ -257,8 +253,11 @@ async def explanation(case: base.Case) -> base.ExplanationResult:
     prompt = PROMPT.format(
         explanation_input=explanation_input.model_dump_json(indent=2)
     )
+    set_observation_input(prompt)
     try:
-        result = await asyncio.to_thread(init_chat(base.ExplanationResult).invoke, prompt)
+        result = await asyncio.to_thread(
+            init_chat(base.ExplanationResult, agent="explanation").invoke, prompt
+        )
         message = " ".join(result.message.split())
         restricted_phrases = (
             "risk score",

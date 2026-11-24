@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from typing import Any
 
@@ -9,6 +10,25 @@ from worker.pipeline.config import get_settings
 from worker.pipeline.logger import get_logger
 
 logger = get_logger(__name__)
+
+_CURRENT_OBSERVATION: ContextVar[tuple[Any, Any | None] | None] = ContextVar(
+    "current_langfuse_observation",
+    default=None,
+)
+
+
+def set_observation_input(input_data: Any) -> None:
+    """Set the input payload for the current Langfuse observation."""
+    current = _CURRENT_OBSERVATION.get()
+    if current is not None:
+        _CURRENT_OBSERVATION.set((current[0], input_data))
+
+
+def get_observation_input() -> Any | None:
+    """Return an input payload set for the current Langfuse observation."""
+    current = _CURRENT_OBSERVATION.get()
+    return current[1] if current is not None else None
+
 
 @lru_cache(maxsize=1)
 def get_langfuse_client() -> Langfuse | None:
@@ -60,6 +80,7 @@ def observation(
         yield None
         return
 
+    observation_token = _CURRENT_OBSERVATION.set((span, None))
     try:
         yield span
     except BaseException:
@@ -73,6 +94,8 @@ def observation(
             manager.__exit__(None, None, None)
         except Exception:
             logger.exception("Could not close Langfuse observation %s.", name)
+    finally:
+        _CURRENT_OBSERVATION.reset(observation_token)
 
 
 def update_observation(

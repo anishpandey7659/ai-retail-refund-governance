@@ -9,7 +9,11 @@ from catboost import CatBoostClassifier
 from ml.model_service import load_model
 from worker.pipeline.logger import get_logger
 from worker.pipeline.nodes import base
-from worker.pipeline.tracing import observation, update_observation
+from worker.pipeline.tracing import (
+    get_observation_input,
+    observation,
+    update_observation,
+)
 
 OutputT = TypeVar("OutputT", bound=base.AgentOutput)
 logger = get_logger(__name__)
@@ -47,7 +51,6 @@ def _record_result(
                 "model": model or "unspecified",
                 "prompt_version": prompt_version or "unspecified",
             }
-            trace_input = case.model_dump(mode="json")
             with observation(
                 name=f"return-agent-{agent_name}",
                 metadata=trace_metadata,
@@ -56,12 +59,13 @@ def _record_result(
                     output = await agent(case)
                 except Exception as error:
                     duration_ms = round((perf_counter() - started) * 1000)
+                    observed_input = get_observation_input()
                     update_observation(
                         span,
                         status="error",
                         details={"duration_ms": duration_ms},
                         error_type=type(error).__name__,
-                        input_data=trace_input,
+                        input_data=observed_input,
                         output_data={
                             "error": f"{type(error).__name__}: {error}"
                         },
@@ -87,6 +91,7 @@ def _record_result(
                     raise
 
                 duration_ms = round((perf_counter() - started) * 1000)
+                observed_input = get_observation_input()
                 update_observation(
                     span,
                     status="success",
@@ -94,7 +99,7 @@ def _record_result(
                         "duration_ms": duration_ms,
                         "result_type": type(output).__name__,
                     },
-                    input_data=trace_input,
+                    input_data=observed_input,
                     output_data=output.model_dump(mode="json"),
                 )
                 case.agent_results[agent_name] = base.AgentResult(
@@ -173,17 +178,12 @@ def _build_decision_input(case: base.Case) -> base.DecisionInput:
         )
     )
 
-    history_requires_behavior = (
-        case.customer_history.returns >= base.MIN_PRIOR_RETURNS
-        or case.customer_history.denied > 0
-    )
-    behavior_skipped_for_new_customer = (
+    behavior_skipped_explicitly = (
         planner_result is not None
         and "behavior" in planner_result.skip
-        and not history_requires_behavior
     )
     behavior_verification_required = (
-        not behavior_skipped_for_new_customer or ring_linked
+        not behavior_skipped_explicitly or ring_linked
     )
 
     product = case.product_info
@@ -267,8 +267,8 @@ def _decision_evidence(decision_input: base.DecisionInput) -> list[str]:
         and not decision_input.case_facts.behavior_verification_required
     ):
         evidence.append(
-            "planner_result: behavior skipped for a customer with no prior "
-            "returns or denials; decision risk_score=0.0 (not a model score)"
+            "planner_result: behavior explicitly skipped; "
+            "decision risk_score=0.0 (not a model score)"
         )
     return evidence
 

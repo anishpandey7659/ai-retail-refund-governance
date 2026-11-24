@@ -16,7 +16,8 @@ not infer facts from missing data. If a feature is null, describe it as
 unavailable rather than zero. Do not recommend denying the return; a human
 reviewer makes the decision.
 
-Return only the explanation text, with no heading or JSON.
+Return a structured response with one "message" field containing only the
+explanation text, with no heading or extra content.
 """,
         ),
         (

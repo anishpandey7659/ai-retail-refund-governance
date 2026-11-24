@@ -34,7 +34,6 @@ PHOTO_REQUIRED: frozenset[ReasonCode] = frozenset({
     "not_as_described",
     "wrong_item",
 })
-MIN_PRIOR_RETURNS = 1
 HIGH_RETURN_RATE = 0.3
 
 # ------------------------------------------------------------------
